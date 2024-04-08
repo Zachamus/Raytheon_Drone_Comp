@@ -143,7 +143,7 @@ int main() {
 
 		}
 	}
-
+//sss
 	bool result_gpio = Init::Gpio_init();
 	bool result_picam = Init::picam_init();
 
