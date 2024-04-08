@@ -2,12 +2,11 @@
 //
 
 #include <iostream>
-#include <Windows.h>
 #include <cassert>
 #include <vector>
 
 
-
+// ja sam idiot
 
 enum states {
 	init,
