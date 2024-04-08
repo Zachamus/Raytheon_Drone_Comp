@@ -24,7 +24,7 @@ namespace Move {
 }
 
 namespace Search {
-	BOOL targetFound;
+	bool targetFound;
 	std::vector<int> OpenCVSearch(std::vector<int> frame);
 	std::vector<int> MavSDKMission(void);
 
@@ -32,20 +32,20 @@ namespace Search {
 }
 
 namespace Init {
-	BOOL Gpio_init(void);
-	BOOL picam_init(void);
+	bool Gpio_init(void);
+	bool picam_init(void);
 }
 
 namespace Drop {
 	std::vector<int> MavSDKDescend(int height);
-	BOOL WaterGunFire(void);
+	bool WaterGunFire(void);
 	int HeightToDrop;
 
 }
 
 namespace Reset {
 	std::vector<int> MavSDKReturnHome(void);
-	BOOL Reset(void);
+	bool Reset(void);
 }
 
 
@@ -57,7 +57,7 @@ int Thread2() { //second thread running OpenCV giving results to shared resource
 
 int main() {
 	curr_state = init;
-	BOOL reset_in; //will need to be an interrupt of some kind 
+	bool reset_in; //will need to be an interrupt of some kind
 	while (1) {
 		switch (curr_state) {
 		case init:
@@ -66,8 +66,8 @@ int main() {
 				break;
 			}
 			else {
-				BOOL gpio_init = Init::Gpio_init();
-				BOOL picam_init = Init::picam_init();
+				bool gpio_init = Init::Gpio_init();
+				bool picam_init = Init::picam_init();
 				assert(picam_init && gpio_init); //breaks program here if fail values returned
 				curr_state = search;
 				break;
@@ -118,7 +118,7 @@ int main() {
 			}
 			else {
 				Drop::MavSDKDescend(Drop::HeightToDrop);
-				BOOL drop_success = Drop::WaterGunFire();
+				bool drop_success = Drop::WaterGunFire();
 				if (drop_success)
 					curr_state = search;
 				curr_state = drop;
@@ -129,7 +129,7 @@ int main() {
 
 		case reset:
 			std::vector<int> pos = Reset::MavSDKReturnHome();
-			BOOL reset_suc = Reset::Reset();
+			bool reset_suc = Reset::Reset();
 
 			if (reset_suc) {
 				//figure out reset logic, probably need to reset whole thing
@@ -144,8 +144,8 @@ int main() {
 		}
 	}
 
-	BOOL result_gpio = Init::Gpio_init();
-	BOOL result_picam = Init::picam_init();
+	bool result_gpio = Init::Gpio_init();
+	bool result_picam = Init::picam_init();
 
 	assert(result_gpio && result_picam); //break program if init fail
 
