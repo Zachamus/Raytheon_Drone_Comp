@@ -2,9 +2,14 @@
 //
 
 #include <iostream>
-#include <Windows.h>
 #include <cassert>
 #include <vector>
+#include <thread>
+#include "Move.h"
+#include <mavsdk/plugins/offboard/offboard.h>
+#include <mavsdk/mavsdk.h>
+#include <ctime>
+#include <mavsdk/plugins/action/action.h>
 
 
 
@@ -17,37 +22,8 @@ enum states {
 	reset
 }curr_state;
 
-namespace Move {
-	std::vector<int> MavSDKLocalMove(std::vector<int> local_dist);
-	std::vector<int> MavSDKGlobalMove(std::vector<int> global_pos);
-	std::vector<int> dist;
-	std::vector<int> acceptable;
-}
-
-namespace Search {
-	BOOL targetFound;
-	std::vector<int> OpenCVSearch(std::vector<int> frame);
-	std::vector<int> MavSDKMission(void);
 
 
-}
-
-namespace Init {
-	BOOL Gpio_init(void);
-	BOOL picam_init(void);
-}
-
-namespace Drop {
-	std::vector<int> MavSDKDescend(int height);
-	BOOL WaterGunFire(void);
-	int HeightToDrop;
-
-}
-
-namespace Reset {
-	std::vector<int> MavSDKReturnHome(void);
-	BOOL Reset(void);
-}
 
 
 int Thread2() { //second thread running OpenCV giving results to shared resource that main thread can only view
@@ -58,10 +34,25 @@ int Thread2() { //second thread running OpenCV giving results to shared resource
 
 int main() {
 	curr_state = init;
-	BOOL reset_in; //will need to be an interrupt of some kind 
+	mavsdk::Mavsdk::ComponentType component_type = mavsdk::Mavsdk::ComponentType::CompanionComputer;
+	mavsdk::Mavsdk::Configuration config = mavsdk::Mavsdk::Configuration::Configuration(component_type);
+	mavsdk::Mavsdk mavsdk(config);
+	mavsdk::ConnectionResult conn_result = mavsdk.add_serial_connection("serial:///dev/ttyAMA0", 57600);
+	while (mavsdk.systems().size() == 0) {
+		
+	}
+	std::shared_ptr<mavsdk::System> system = mavsdk.systems()[0];
+	auto offboard = mavsdk::Offboard{ system };
+	auto action = mavsdk::Action{ system };
+
+
+
+
+
 	while (1) {
 		switch (curr_state) {
 		case init:
+		{
 			if (reset_in) {
 				curr_state = reset;
 				break;
@@ -73,6 +64,7 @@ int main() {
 				curr_state = search;
 				break;
 			}
+		}
 		case search:
 
 		{
