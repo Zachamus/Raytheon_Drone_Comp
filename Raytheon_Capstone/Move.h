@@ -1,7 +1,6 @@
 #pragma once
 
-#include <mavsdk/mavlink_address.h>
-#include <mavsdk/mavlink/common/mavlink.h>
+#include <mavsdk/plugins/offboard/offboard.h>
 #include <vector>
 
 
@@ -11,7 +10,4 @@ namespace Move {
 
 	std::vector<int> MavSDKGlobalMove(std::vector<int> global_pos);
 
-	std::vector<int> dist;
-
-	std::vector<int> acceptable;
 }
