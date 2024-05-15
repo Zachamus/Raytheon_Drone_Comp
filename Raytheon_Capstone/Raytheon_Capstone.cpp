@@ -9,7 +9,14 @@
 #include <iostream>
 #include <future>
 #include <memory>
-#include <thread> 
+#include <thread>
+#include <mavsdk/geometry.h>
+
+
+mavsdk::geometry::CoordinateTransformation::LocalCoordinate cv_to_mav(std::vector<float>, double heading) {
+	// convert vector to Local Coordinate struct
+	//takes x y z vector and compass heading
+}
 
 
 using namespace cv;
@@ -58,38 +65,6 @@ namespace {
 }
 
 
-
-namespace Move {
-	std::vector<int> MavSDKLocalMove(std::vector<int> local_dist);
-	std::vector<int> MavSDKGlobalMove(std::vector<int> global_pos);
-	std::vector<int> dist;
-	std::vector<int> acceptable;
-}
-
-namespace Search {
-	bool targetFound;
-	std::vector<int> OpenCVSearch(std::vector<int> frame);
-	std::vector<int> MavSDKMission(void);
-
-
-}
-
-
-
-
-namespace Drop {
-	std::vector<int> MavSDKDescend(int height);
-	bool WaterGunFire(void);
-	int HeightToDrop;
-
-}
-
-namespace Reset {
-	std::vector<int> MavSDKReturnHome(void);
-	bool Reset(void);
-}
-
-
 int Thread2() { //second thread running OpenCV giving results to shared resource that main thread can only view
 
 }
@@ -108,9 +83,6 @@ int main() {
 		return 1;
 	}
 
-
-	
-
 	while (mavsdk.systems().size() == 0) {
 		std::cout << "Waiting for system to connect..." << std::endl;
 		std::this_thread::sleep_for(1s);
@@ -120,20 +92,29 @@ int main() {
 	auto offboard = mavsdk::Offboard{ system };
 	auto action = mavsdk::Action{ system };
 	auto telemetry = mavsdk::Telemetry{ system };
+	
 
 	while (telemetry.health_all_ok() == false) {
 		std::cout << "Telemetry not healthy";
 		std::this_thread::sleep_for(1s);
 	}
 	std::cout << "System is ready";
-	
+
 	Action::Result set_altitude = action.set_takeoff_altitude(5.0);
-	
+
 	if (set_altitude != Action::Result::Success) {
 		std::cerr << "Set altitude failed" << std::endl;
 		return 1;
 	}
 
+	Action::Result arm_result = action.arm();
+
+	if (arm_result != Action::Result::Success) {
+		std::cerr << "Arm failed: " << arm_result << std::endl;
+		return 1;
+	}
+
+	
 
 
 	while (1) {
@@ -221,11 +202,9 @@ int main() {
 
 		}
 	}
+}
 
-	bool result_gpio = Init::Gpio_init();
-	bool result_picam = Init::picam_init();
 
-	assert(result_gpio && result_picam); //break program if init fail
 
 
 
