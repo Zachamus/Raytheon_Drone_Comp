@@ -2,9 +2,21 @@
 //
 #include "Header.h"
 #include <string>
+#include <mavsdk/plugins/offboard/offboard.h>
+#include <mavsdk/plugins/action/action.h>
+#include <mavsdk/mavsdk.h>
+#include <mavsdk/plugins/telemetry/telemetry.h>
+#include <iostream>
+#include <future>
+#include <memory>
+#include <thread> 
+
 
 using namespace cv;
 using namespace std;
+using namespace mavsdk;
+using std::chrono::seconds;
+using std::this_thread::sleep_for;
 
 enum states {
 	init,
@@ -86,7 +98,44 @@ int Thread2() { //second thread running OpenCV giving results to shared resource
 
 int main() {
 	curr_state = init;
-	bool reset_in; //will need to be an interrupt of some kind 
+	mavsdk::Mavsdk::ComponentType component_type = mavsdk::Mavsdk::ComponentType::CompanionComputer;
+	mavsdk::Mavsdk::Configuration config = mavsdk::Mavsdk::Configuration::Configuration(component_type);
+	mavsdk::Mavsdk mavsdk(config);
+	mavsdk::ConnectionResult conn_result = mavsdk.add_serial_connection("serial:///dev/ttyAMA0", 57600);
+
+	if (conn_result != ConnectionResult::Success) {
+		std::cerr << "Connection failed: " << conn_result << '\n';
+		return 1;
+	}
+
+
+	
+
+	while (mavsdk.systems().size() == 0) {
+		std::cout << "Waiting for system to connect..." << std::endl;
+		std::this_thread::sleep_for(1s);
+	}
+
+	std::shared_ptr<mavsdk::System> system = mavsdk.systems().at(0);
+	auto offboard = mavsdk::Offboard{ system };
+	auto action = mavsdk::Action{ system };
+	auto telemetry = mavsdk::Telemetry{ system };
+
+	while (telemetry.health_all_ok() == false) {
+		std::cout << "Telemetry not healthy";
+		std::this_thread::sleep_for(1s);
+	}
+	std::cout << "System is ready";
+	
+	Action::Result set_altitude = action.set_takeoff_altitude(5.0);
+	
+	if (set_altitude != Action::Result::Success) {
+		std::cerr << "Set altitude failed" << std::endl;
+		return 1;
+	}
+
+
+
 	while (1) {
 		switch (curr_state) {
 		case init:

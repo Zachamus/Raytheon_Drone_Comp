@@ -26,3 +26,16 @@
 #include "opencv2/imgcodecs.hpp"
 #include <time.h>
 #include <mavsdk/plugins/offboard/offboard.h>
+
+
+
+#define ASSERT_EQ(val1, val2) \
+    if (!((val1) == (val2))) { \
+        throw std::runtime_error("Assertion failed: " ); \
+    }
+
+
+#define ASSERT_TRUE(condition) \
+    if (!(condition)) { \
+        throw std::runtime_error("Assertion failed: " #condition); \
+    }
