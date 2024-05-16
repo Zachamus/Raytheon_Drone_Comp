@@ -73,6 +73,7 @@ int Thread2() { //second thread running OpenCV giving results to shared resource
 
 int main() {
 	curr_state = init;
+
 	mavsdk::Mavsdk::ComponentType component_type = mavsdk::Mavsdk::ComponentType::CompanionComputer;
 	mavsdk::Mavsdk::Configuration config = mavsdk::Mavsdk::Configuration::Configuration(component_type);
 	mavsdk::Mavsdk mavsdk(config);
@@ -87,12 +88,14 @@ int main() {
 		std::cout << "Waiting for system to connect..." << std::endl;
 		std::this_thread::sleep_for(1s);
 	}
-
+	
+	
 	std::shared_ptr<mavsdk::System> system = mavsdk.systems().at(0);
 	auto offboard = mavsdk::Offboard{ system };
 	auto action = mavsdk::Action{ system };
 	auto telemetry = mavsdk::Telemetry{ system };
 
+	
 
 	while (telemetry.health_all_ok() == false) {
 		std::cout << "Telemetry not healthy";
@@ -114,7 +117,7 @@ int main() {
 		return 1;
 	}
 
-
+	
 
 
 	while (1) {
