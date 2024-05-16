@@ -114,7 +114,7 @@ int main() {
 		return 1;
 	}
 
-	
+	telemetry.subscribe_heading()
 
 
 	while (1) {
