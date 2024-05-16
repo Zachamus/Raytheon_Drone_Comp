@@ -107,6 +107,7 @@ int main() {
 	Action::Result set_altitude = action.set_takeoff_altitude(5.0);
 	Action::Result set_speed = action.set_maximum_speed(2.0);
 
+
 	if (set_speed != Action::Result::Success) {
 		std::cerr << "Set Speed Failed" << std::endl;
 		return 1;
@@ -128,6 +129,16 @@ int main() {
 	while (telemetry.flight_mode() != Telemetry::FlightMode::Posctl) {
 		sleep_for(1s);
 	}
+
+    Action::Result takeoff_success = action.takeoff();
+
+    if (takeoff_success != Action::Result::Success ) {
+        cerr << "Did not take off " << takeoff_success << endl;
+        return 1;
+    }
+
+
+
 
 
 
