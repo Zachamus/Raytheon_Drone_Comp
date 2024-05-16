@@ -19,6 +19,7 @@ mavsdk::geometry::CoordinateTransformation::LocalCoordinate cv_to_mav(std::vecto
 }
 
 
+
 using namespace cv;
 using namespace std;
 using namespace mavsdk;
@@ -104,6 +105,12 @@ int main() {
 	std::cout << "System is ready";
 
 	Action::Result set_altitude = action.set_takeoff_altitude(5.0);
+	Action::Result set_speed = action.set_maximum_speed(2.0);
+
+	if (set_speed != Action::Result::Success) {
+		std::cerr << "Set Speed Failed" << std::endl;
+		return 1;
+	}
 
 	if (set_altitude != Action::Result::Success) {
 		std::cerr << "Set altitude failed" << std::endl;
@@ -116,8 +123,12 @@ int main() {
 		std::cerr << "Arm failed: " << arm_result << std::endl;
 		return 1;
 	}
+	//Telemetry::FlightMode curr_flight_mode;
 
-	
+	while (telemetry.flight_mode() != Telemetry::FlightMode::Posctl) {
+		sleep_for(1s);
+	}
+
 
 
 	while (1) {
