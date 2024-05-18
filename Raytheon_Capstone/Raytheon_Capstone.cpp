@@ -13,10 +13,78 @@
 #include <mavsdk/geometry.h>
 
 
+
 mavsdk::geometry::CoordinateTransformation::LocalCoordinate cv_to_mav(std::vector<float>, double heading) {
 	// convert vector to Local Coordinate struct
 	//takes x y z vector and compass heading
 }
+
+
+
+bool offb_ctrl_body(mavsdk::Offboard& offboard)
+{
+	std::cout << "Starting Offboard velocity control in body coordinates\n";
+
+	// Send it once before starting offboard, otherwise it will be rejected.
+	Offboard::VelocityBodyYawspeed stay{};
+	offboard.set_velocity_body(stay);
+
+	Offboard::Result offboard_result = offboard.start();
+	if (offboard_result != Offboard::Result::Success) {
+		std::cerr << "Offboard start failed: " << offboard_result << '\n';
+		return false;
+	}
+	std::cout << "Offboard started\n";
+
+	std::cout << "Turn clock-wise and climb\n";
+	Offboard::VelocityBodyYawspeed cc_and_climb{};
+	cc_and_climb.down_m_s = -1.0f;
+	cc_and_climb.yawspeed_deg_s = 60.0f;
+	offboard.set_velocity_body(cc_and_climb);
+	sleep_for(seconds(5));
+
+	std::cout << "Turn back anti-clockwise\n";
+	Offboard::VelocityBodyYawspeed ccw{};
+	ccw.down_m_s = -1.0f;
+	ccw.yawspeed_deg_s = -60.0f;
+	offboard.set_velocity_body(ccw);
+	sleep_for(seconds(5));
+
+	std::cout << "Wait for a bit\n";
+	offboard.set_velocity_body(stay);
+	sleep_for(seconds(2));
+
+	std::cout << "Fly a circle\n";
+	Offboard::VelocityBodyYawspeed circle{};
+	circle.forward_m_s = 5.0f;
+	circle.yawspeed_deg_s = 30.0f;
+	offboard.set_velocity_body(circle);
+	sleep_for(seconds(15));
+
+	std::cout << "Wait for a bit\n";
+	offboard.set_velocity_body(stay);
+	sleep_for(seconds(5));
+
+	std::cout << "Fly a circle sideways\n";
+	circle.right_m_s = -5.0f;
+	circle.yawspeed_deg_s = 30.0f;
+	offboard.set_velocity_body(circle);
+	sleep_for(seconds(15));
+
+	std::cout << "Wait for a bit\n";
+	offboard.set_velocity_body(stay);
+	sleep_for(seconds(8));
+
+	offboard_result = offboard.stop();
+	if (offboard_result != Offboard::Result::Success) {
+		std::cerr << "Offboard stop failed: " << offboard_result << '\n';
+		return false;
+	}
+	std::cout << "Offboard stopped\n";
+
+	return true;
+}
+
 
 
 
@@ -33,6 +101,8 @@ enum states {
 	drop,
 	reset
 }curr_state;
+
+
 
 namespace {
 	const char* about = "Basic marker detection";
@@ -72,6 +142,7 @@ int Thread2() { //second thread running OpenCV giving results to shared resource
 
 
 
+
 int main() {
 	curr_state = init;
 
@@ -89,14 +160,18 @@ int main() {
 		std::cout << "Waiting for system to connect..." << std::endl;
 		std::this_thread::sleep_for(1s);
 	}
+
 	
-	
+
+
 	std::shared_ptr<mavsdk::System> system = mavsdk.systems().at(0);
 	auto offboard = mavsdk::Offboard{ system };
 	auto action = mavsdk::Action{ system };
 	auto telemetry = mavsdk::Telemetry{ system };
-
 	
+
+
+
 
 	while (telemetry.health_all_ok() == false) {
 		std::cout << "Telemetry not healthy";
@@ -129,8 +204,37 @@ int main() {
 		sleep_for(1s);
 	}
 
+	Action::Result takeoff_result = action.takeoff();
+
+	if (takeoff_result != Action::Result::Success) {
+		std::cerr << "Takeoff failed: " << takeoff_result << std::endl;
+		return 1;
+	}
+	
+
+	if (!offb_ctrl_body(offboard)) {
+		return 1;
+	}
+
+	const auto land_result = action.land();
+	if (land_result != Action::Result::Success) {
+		std::cerr << "Landing failed: " << land_result << std::endl;
+		return 1;
+	}
+	while (telemetry.in_air()) {
+		std::cout << "Currently landing";
+		sleep_for(1s);
+	}
+
+	std::cout << "Landed";
+
+	sleep_for(seconds(3));
+
+	return 0;
 
 
+
+	/*
 	while (1) {
 		switch (curr_state) {
 		case init:
@@ -139,8 +243,8 @@ int main() {
 				break;
 			}
 			else {
-				bool gpio_init = Init::Gpio_init();
-				bool picam_init = Init::picam_init();
+				bool gpio_init = init::gpio_init();
+				bool picam_init = init::picam_init();
 				assert(picam_init && gpio_init); //breaks program here if fail values returned
 				curr_state = search;
 				break;
@@ -148,14 +252,14 @@ int main() {
 		case search:
 
 		{
-			while (!Search::targetFound && !reset_in) { //need to make OpenCV class and have a pointer in order to do some read operations on other threads data, might need mutex 
-				Search::MavSDKMission();
+			while (!search::targetfound && !reset_in) { //need to make opencv class and have a pointer in order to do some read operations on other threads data, might need mutex 
+				search::mavsdkmission();
 			}
 			if (reset_in) {
 				curr_state = reset;
 				break;
 			}
-			else if (Search::targetFound) {
+			else if (search::targetfound) {
 				curr_state = move;
 				break;
 			}
@@ -171,12 +275,12 @@ int main() {
 			}
 
 			else {
-				if (Move::dist <= Move::acceptable) {
+				if (move::dist <= move::acceptable) {
 					curr_state = drop;
 					break;
 
 				}
-				Move::MavSDKLocalMove(Move::dist);
+				move::mavsdklocalmove(move::dist);
 				curr_state = move;
 				break;
 
@@ -190,8 +294,8 @@ int main() {
 				break;
 			}
 			else {
-				Drop::MavSDKDescend(Drop::HeightToDrop);
-				bool drop_success = Drop::WaterGunFire();
+				drop::mavsdkdescend(drop::heighttodrop);
+				bool drop_success = drop::watergunfire();
 				if (drop_success)
 					curr_state = search;
 				curr_state = drop;
@@ -201,19 +305,20 @@ int main() {
 
 
 		case reset:
-			std::vector<int> pos = Reset::MavSDKReturnHome();
-			bool reset_suc = Reset::Reset();
+			std::vector<int> pos = reset::mavsdkreturnhome();
+			bool reset_suc = reset::reset();
 
 			if (reset_suc) {
-				//figure out reset logic, probably need to reset whole thing
+				figure out reset logic, probably need to reset whole thing
 			}
 
 			else {
-				reset_suc = Reset::Reset(); //lol try again
+				reset_suc = reset::reset(); //lol try again
 			}
 
 
 
 		}
 	}
+	*/
 }
