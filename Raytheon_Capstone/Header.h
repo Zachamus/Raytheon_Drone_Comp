@@ -1,8 +1,8 @@
 #pragma once
 #include <iostream>
 #include <ctime>
-#include <opencv2/imgproc.hpp>
-#include <opencv2/highgui.hpp>
+/*#include <opencv2/imgproc.hpp>
+//#include <opencv2/highgui.hpp>
 #include <stdio.h>
 #include <cstdlib>
 #include "opencv2/opencv.hpp"
@@ -15,15 +15,16 @@
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/video.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
+* */
 #include <ctime>
 #include <stack>
 #include <iostream>
 #include <math.h>
-#include "opencv2/highgui/highgui.hpp"
-#include "opencv2/imgproc/imgproc.hpp"
-#include "opencv2/videoio.hpp"
-#include <opencv2/video.hpp>
-#include "opencv2/imgcodecs.hpp"
+//#include "opencv2/highgui/highgui.hpp"
+//#include "opencv2/imgproc/imgproc.hpp"
+//#include "opencv2/videoio.hpp"
+//#include <opencv2/video.hpp>
+//#include "opencv2/imgcodecs.hpp"
 #include <time.h>
 #include <mavsdk/plugins/offboard/offboard.h>
 

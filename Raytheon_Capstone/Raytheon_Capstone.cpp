@@ -12,7 +12,11 @@
 #include <thread>
 #include <mavsdk/geometry.h>
 
-
+//using namespace cv;
+using namespace std;
+using namespace mavsdk;
+using std::chrono::seconds;
+using std::this_thread::sleep_for;
 
 mavsdk::geometry::CoordinateTransformation::LocalCoordinate cv_to_mav(std::vector<float>, double heading) {
 	// convert vector to Local Coordinate struct
@@ -88,11 +92,7 @@ bool offb_ctrl_body(mavsdk::Offboard& offboard)
 
 
 
-using namespace cv;
-using namespace std;
-using namespace mavsdk;
-using std::chrono::seconds;
-using std::this_thread::sleep_for;
+
 
 enum states {
 	init,
@@ -146,36 +146,26 @@ int Thread2() { //second thread running OpenCV giving results to shared resource
 int main() {
 	curr_state = init;
 
-	mavsdk::Mavsdk::ComponentType component_type = mavsdk::Mavsdk::ComponentType::CompanionComputer;
-	mavsdk::Mavsdk::Configuration config = mavsdk::Mavsdk::Configuration::Configuration(component_type);
-	mavsdk::Mavsdk mavsdk(config);
-	mavsdk::ConnectionResult conn_result = mavsdk.add_serial_connection("serial:///dev/ttyAMA0", 57600);
+	Mavsdk mavsdk{Mavsdk::Configuration{Mavsdk::ComponentType::CompanionComputer}};
+	mavsdk::ConnectionResult conn_result = mavsdk.add_any_connection("serial:///dev/ttyAMA0:57600");
 
 	if (conn_result != ConnectionResult::Success) {
 		std::cerr << "Connection failed: " << conn_result << '\n';
 		return 1;
 	}
 
-	while (mavsdk.systems().size() == 0) {
-		std::cout << "Waiting for system to connect..." << std::endl;
-		std::this_thread::sleep_for(1s);
-	}
-
-	
-
-
-	std::shared_ptr<mavsdk::System> system = mavsdk.systems().at(0);
-	auto offboard = mavsdk::Offboard{ system };
-	auto action = mavsdk::Action{ system };
-	auto telemetry = mavsdk::Telemetry{ system };
+	auto system = mavsdk.first_autopilot(3.0);
+	auto offboard = mavsdk::Offboard{ system.value() };
+	auto action = mavsdk::Action{ system.value() };
+	auto telemetry = mavsdk::Telemetry{ system.value() };
 	
 
 
 
 
 	while (telemetry.health_all_ok() == false) {
-		std::cout << "Telemetry not healthy";
-		std::this_thread::sleep_for(1s);
+		std::cout << "Telemetry not healthy" << std::endl;
+		std::this_thread::sleep_for(0.5s);
 	}
 	std::cout << "System is ready";
 
