@@ -50,8 +50,8 @@ std::vector<std::pair<double,double>> SearchAlgo(double lat1, double long1, doub
 	double nextlong, nextlat;
 
 	for (auto gpsVec : localSearch) {
-		double up = gpsVec.first;
-		double right = gpsVec.second;
+		double up = gpsVec.first/ ((double)1.094);
+		double right = gpsVec.second / ((double)1.094);
 		if (up) {
 			geod.Direct(currlat, currlong, az13, up, nextlat, nextlong);
 		}
