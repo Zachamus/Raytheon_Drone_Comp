@@ -11,16 +11,37 @@
 #include <memory>
 #include <thread>
 #include <mavsdk/geometry.h>
+#include <GeographicLib/Geodesic.hpp>
+
 
 //using namespace cv;
 using namespace std;
 using namespace mavsdk;
 using std::chrono::seconds;
 using std::this_thread::sleep_for;
+using namespace GeographicLib;
+const vector<pair<double, double>> searchVec1 = { {5.0,5.0},{5.0,5.0},{5.0,5.0} };
 
-mavsdk::geometry::CoordinateTransformation::LocalCoordinate cv_to_mav(std::vector<float>, double heading) {
+/*mavsdk::geometry::CoordinateTransformation::LocalCoordinate cv_to_mav(std::vector<float>, double heading) {
 	// convert vector to Local Coordinate struct
 	//takes x y z vector and compass heading
+}
+*/
+//double longitude, double latitude, double altitude
+
+std::vector<std::vector<double>> SearchAlgo(double long1, double long2, double long3, double long4, double lat1, double lat2, double lat3, double lat4, double altitude) {
+	Geodesic geod = Geodesic::WGS84();
+	vector<pair<double, double>> gpsCoords;
+	double distance = 50;
+	double new_lat, new_long;
+	//obtain verticle angle and horizontal angle, ie need to geod.Inverse bottom left and top left, and bottom left and top right;
+	double dist_bottom, az12, az21;
+	geod.Inverse(lat1, long1, lat2, long2, dist_bottom, az12, az21); //obtain horizontal angle and distance
+	double angle_horizontal = az12;
+	double dist_top, az13, az31;
+	geod.Inverse(lat1, long1, lat3, long3, dist_top, az13, az31); //obtain vertical angle and distance
+	double angle_vertical = az13; //now from
+
 }
 
 
@@ -137,15 +158,16 @@ namespace {
 
 
 int Thread2() { //second thread running OpenCV giving results to shared resource that main thread can only view
-
+	return 0;
 }
 
 
 
 
-int main() {
+int main(int argc, char* argv[]) {
 	curr_state = init;
-
+	std::cout.precision(15);
+	SearchAlgo();
 	Mavsdk mavsdk{Mavsdk::Configuration{Mavsdk::ComponentType::CompanionComputer}};
 	mavsdk::ConnectionResult conn_result = mavsdk.add_any_connection("serial:///dev/ttyAMA0:57600");
 
