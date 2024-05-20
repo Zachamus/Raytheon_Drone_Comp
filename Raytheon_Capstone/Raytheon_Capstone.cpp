@@ -30,7 +30,7 @@ const vector<pair<double, double>> searchVec1 = { {0,7.5},{10,0},{10,0},{10,0},{
 */
 //double longitude, double latitude, double altitude
 
-std::vector<std::pair<double,double>> SearchAlgo(double long1, double long2, double long3, double long4, double lat1, double lat2, double lat3, double lat4, double altitude,
+std::vector<std::pair<double,double>> SearchAlgo(double lat1, double long1, double lat2, double long2, double lat3, double long3, double lat4, double long4, double altitude,
 												const vector<pair<double,double>> localSearch) {
 	Geodesic geod = Geodesic::WGS84();
 	vector<pair<double, double>> gpsCoords;
@@ -190,7 +190,12 @@ int Thread2() { //second thread running OpenCV giving results to shared resource
 int main(int argc, char* argv[]) {
 	curr_state = init;
 	std::cout.precision(15);
-	SearchAlgo();
+	//calculate Search gps coordinates
+	std::vector<pair<double,double>> out = SearchAlgo(34.418556, -119.856929, 34.418556, -119.856216, 34.419237, -119.856929, 34.419237, -119.856216, 30.0, searchVec1); 
+	for (const auto& joe : out) {
+		std::cout << joe.first << " " << joe.second << std::endl; //print gps coords
+	}
+
 	Mavsdk mavsdk{Mavsdk::Configuration{Mavsdk::ComponentType::CompanionComputer}};
 	mavsdk::ConnectionResult conn_result = mavsdk.add_any_connection("serial:///dev/ttyAMA0:57600");
 
