@@ -219,7 +219,7 @@ int main(int argc, char* argv[]) {
 	}
 	std::cout << "System is ready";
 
-	Action::Result set_altitude = action.set_takeoff_altitude(5.0);
+	Action::Result set_altitude = action.set_takeoff_altitude(8.0);
 	Action::Result set_speed = action.set_maximum_speed(2.0);
 
 	if (set_speed != Action::Result::Success) {
@@ -250,11 +250,26 @@ int main(int argc, char* argv[]) {
 		std::cerr << "Takeoff failed: " << takeoff_result << std::endl;
 		return 1;
 	}
-	
+	sleep_for(5s);
+	Telemetry::Altitude curr_alt = telemetry.altitude();
+	double global_alt = curr_alt.altitude_amsl_m;
 
-	if (!offb_ctrl_body(offboard)) {
-		return 1;
+	for (const auto& gpsCoord : out) {
+		Action::Result gps_res = action.goto_location(gpsCoord.first, gpsCoord.second, global_alt, 0.0);
+		if (gps_res != Action::Result::Success)
+			break;
+		while ((abs(telemetry.position().latitude_deg - gpsCoord.first) > 0.00001) || (abs(telemetry.position().longitude_deg - gpsCoord.second) > 0.00001)) {
+			sleep_for(0.5s);
+			std::cout << "Drone not at pos yet, we are at: " << telemetry.position().latitude_deg << " latitude, and: " << telemetry.position().longitude_deg << " longitude" <<std::endl;
+			std::cout << "We should be at: " << gpsCoord.first << ", " << gpsCoord.second << std::endl;
+		}
+		std::cout << "We have reached the target location! Sleeping for 3 seconds now!" << std::endl;
+		sleep_for(3s);
 	}
+
+	//if (!offb_ctrl_body(offboard)) {
+		//return 1;
+	//}
 
 	const auto land_result = action.land();
 	if (land_result != Action::Result::Success) {
