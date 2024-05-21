@@ -190,8 +190,9 @@ int Thread2() { //second thread running OpenCV giving results to shared resource
 int main(int argc, char* argv[]) {
 	curr_state = init;
 	std::cout.precision(15);
+	sleep_for(10s);
 	//calculate Search gps coordinates
-	std::vector<pair<double,double>> out = SearchAlgo(34.418556, -119.856929, 34.418556, -119.856216, 34.419237, -119.856929, 34.419237, -119.856216, 30.0, searchVec1); 
+	std::vector<pair<double,double>> out = SearchAlgo(34.4193286, -119.8555100, 34.4193164, -119.8559169, 34.4193286, -119.8555100, 34.419237, -119.856216, 30.0, searchVec1); 
 	for (const auto& joe : out) {
 		std::cout << joe.first << " " << joe.second << std::endl; //print gps coords
 	}
@@ -250,21 +251,23 @@ int main(int argc, char* argv[]) {
 		std::cerr << "Takeoff failed: " << takeoff_result << std::endl;
 		return 1;
 	}
-	sleep_for(5s);
+	sleep_for(10s);
 	Telemetry::Altitude curr_alt = telemetry.altitude();
 	double global_alt = curr_alt.altitude_amsl_m;
 
 	for (const auto& gpsCoord : out) {
 		Action::Result gps_res = action.goto_location(gpsCoord.first, gpsCoord.second, global_alt, 0.0);
-		if (gps_res != Action::Result::Success)
+		if (gps_res != Action::Result::Success){
+			std::cout << "Fucked" << std::endl;
 			break;
+		}
 		while ((abs(telemetry.position().latitude_deg - gpsCoord.first) > 0.00001) || (abs(telemetry.position().longitude_deg - gpsCoord.second) > 0.00001)) {
 			sleep_for(0.5s);
 			std::cout << "Drone not at pos yet, we are at: " << telemetry.position().latitude_deg << " latitude, and: " << telemetry.position().longitude_deg << " longitude" <<std::endl;
 			std::cout << "We should be at: " << gpsCoord.first << ", " << gpsCoord.second << std::endl;
 		}
 		std::cout << "We have reached the target location! Sleeping for 3 seconds now!" << std::endl;
-		sleep_for(3s);
+		sleep_for(1s);
 	}
 
 	//if (!offb_ctrl_body(offboard)) {
