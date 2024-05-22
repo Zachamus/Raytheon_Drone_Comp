@@ -12,6 +12,7 @@
 #include <thread>
 #include <mavsdk/geometry.h>
 #include <GeographicLib/Geodesic.hpp>
+#include <unordered_set>
 
 
 //using namespace cv;
@@ -22,6 +23,13 @@ using std::this_thread::sleep_for;
 using namespace GeographicLib;
 const vector<pair<double, double>> searchVec1 = { {0,7.5},{10,0},{10,0},{10,0},{10,0},{10,0},{0,7.5}, {-10,0}, {-10,0}, {-10,0}, {-10,0}, {-10,0}, {0,7.5}, 
 												{10,0}, {10,0}, {10,0}, {10,0}, {10,0}, };
+int searchIndex{ 0 };
+std::vector<int> markerInfo;
+std::unordered_set<int> hitMarkers;
+std::mutex markerMutex;
+
+
+
 
 /*mavsdk::geometry::CoordinateTransformation::LocalCoordinate cv_to_mav(std::vector<float>, double heading) {
 	// convert vector to Local Coordinate struct
@@ -140,9 +148,9 @@ bool offb_ctrl_body(mavsdk::Offboard& offboard)
 
 enum states {
 	init,
-	search,
-	move,
-	drop,
+	searching,
+	moving,
+	dropping,
 	reset
 }curr_state;
 
@@ -188,7 +196,7 @@ int Thread2() { //second thread running OpenCV giving results to shared resource
 
 
 int main(int argc, char* argv[]) {
-	curr_state = init;
+	curr_state = searching;
 	std::cout.precision(15);
 	sleep_for(10s);
 	//calculate Search gps coordinates
@@ -255,20 +263,64 @@ int main(int argc, char* argv[]) {
 	Telemetry::Altitude curr_alt = telemetry.altitude();
 	double global_alt = curr_alt.altitude_amsl_m;
 
-	for (const auto& gpsCoord : out) {
-		Action::Result gps_res = action.goto_location(gpsCoord.first, gpsCoord.second, global_alt, 0.0);
-		if (gps_res != Action::Result::Success){
-			std::cout << "Fucked" << std::endl;
-			break;
+	while (1) {
+		switch (curr_state) {
+			case searching: 
+				Action::Result gps_res = action.goto_location(out[searchIndex].first, out[searchIndex].second, global_alt, 0.0);
+				if (gps_res != Action::Result::Success) {
+					std::cout << "Fucked" << std::endl;
+					curr_state = reset;
+					break;
+				}
+				bool marker_found = false;
+				//need to take mutex right before we check the markerInfo vector
+				while ((abs(telemetry.position().latitude_deg - out[searchIndex].first) > 0.00001) || (abs(telemetry.position().longitude_deg - out[searchIndex].second) > 0.00001)) {
+					if (!(markerInfo.empty())) {
+						for (auto marker : markerInfo) {
+							if (hitMarkers.find(marker) == hitMarkers.end()) {
+								curr_state = moving;
+								marker_found = true; //marker is found and not in the hash set
+								Action::Result stop_result = action.hold(); //stop the drone now, because we dont want the vector to be incorrect
+								if (stop_result != Action::Result::Success)
+									curr_state = reset;
+								break;
+							}
+						}
+					}
+					// now release the mutex
+					sleep_for(0.2s); //not sure if this is needed I think it isnt
+					std::cout << "Drone not at pos yet, we are at: " << telemetry.position().latitude_deg << " latitude, and: " << telemetry.position().longitude_deg << " longitude" << std::endl;
+					std::cout << "We should be at: " << out[searchIndex].first << ", " << out[searchIndex].second << std::endl;
+				}
+				if (marker_found) {
+					break; //break out of current state and go into either reset or moving depending on action result
+				}
+				std::cout << "We have reached the target location! Checking for markers and then sleeping!" << std::endl;
+				if (!(markerInfo.empty())) {
+					for (auto marker : markerInfo) {
+						if (hitMarkers.find(marker) == hitMarkers.end()) {
+							curr_state = moving;
+							marker_found = true; //marker is found and not in the hash set
+							Action::Result stop_result = action.hold(); //stop the drone now, because we dont want the vector to be incorrect
+							if (stop_result != Action::Result::Success)
+								curr_state = reset;
+							break;
+						}
+					}
+				}
+				searchIndex++;
+				sleep_for(1s);
+				
+			case moving:
+				//if marker is not already hit, and marker is not ours, move to closest marker
+
 		}
-		while ((abs(telemetry.position().latitude_deg - gpsCoord.first) > 0.00001) || (abs(telemetry.position().longitude_deg - gpsCoord.second) > 0.00001)) {
-			sleep_for(0.5s);
-			std::cout << "Drone not at pos yet, we are at: " << telemetry.position().latitude_deg << " latitude, and: " << telemetry.position().longitude_deg << " longitude" <<std::endl;
-			std::cout << "We should be at: " << gpsCoord.first << ", " << gpsCoord.second << std::endl;
-		}
-		std::cout << "We have reached the target location! Sleeping for 3 seconds now!" << std::endl;
-		sleep_for(1s);
+
+
 	}
+
+
+	
 
 	//if (!offb_ctrl_body(offboard)) {
 		//return 1;
