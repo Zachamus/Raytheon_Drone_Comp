@@ -13,6 +13,7 @@
 #include <mavsdk/geometry.h>
 #include <GeographicLib/Geodesic.hpp>
 #include <unordered_set>
+#include <shared_mutex>
 
 
 //using namespace cv;
@@ -25,9 +26,41 @@ const vector<pair<double, double>> searchVec1 = { {0,7.5},{10,0},{10,0},{10,0},{
 												{10,0}, {10,0}, {10,0}, {10,0}, {10,0}, };
 int searchIndex{ 0 };
 std::vector<int> markerInfo;
+std::unordered_map<int, std::vector<float>> rmarkerInfo;
 std::unordered_set<int> hitMarkers;
-std::mutex markerMutex;
+//std::mutex markerMutex;
+std::vector<int> markers;
+std::shared_mutex mutex_shared; //shared mutex might be best here, lots of read operations and not a bunch of write ops
 
+Telemetry::Quaternion mult(Telemetry::Quaternion a, Telemetry::Quaternion b) {
+	Telemetry::Quaternion result;
+	result.w = a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z;
+	result.x = a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y;
+	result.y = a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x;
+	result.z = 
+}
+
+
+std::vector<float> convertToNED(Telemetry::Quaternion q, std::vector<float> localVec) { //convert to NED frame
+	Telemetry::Quaternion localquat;
+	localquat.w = 0;					//create dummy quaternion for local vec
+	localquat.x = localVec[0];
+	localquat.y = localVec[1];
+	localquat.z = localVec[2];			//now need to create inverse of NEDquat, 
+	Telemetry::Quaternion inverseNed;
+	float inverseNedSqrd = q.w * q.w + q.x * q.x + q.y * q.y + q.z * q.z;
+	inverseNed.w = q.w / inverseNedSqrd;
+	inverseNed.x = q.x / inverseNedSqrd;
+	inverseNed.y = q.y / inverseNedSqrd;
+	inverseNed.z = q.z / inverseNedSqrd;
+
+	//now perform q * localquat * q^-1 result will also be a dummy quat, the imaginary part will be the vector we want
+
+
+
+
+
+}
 
 
 
@@ -262,6 +295,8 @@ int main(int argc, char* argv[]) {
 	sleep_for(10s);
 	Telemetry::Altitude curr_alt = telemetry.altitude();
 	double global_alt = curr_alt.altitude_amsl_m;
+	Telemetry::ActuatorOutputStatus joe = telemetry.actuator_output_status();
+	std::vector<float> moveVec;
 
 	while (1) {
 		switch (curr_state) {
@@ -300,7 +335,9 @@ int main(int argc, char* argv[]) {
 					for (auto marker : markerInfo) {
 						if (hitMarkers.find(marker) == hitMarkers.end()) {
 							curr_state = moving;
-							marker_found = true; //marker is found and not in the hash set
+							marker_found = true; //marker is found and not in the hash set of markers that we've deployed water on
+							mutex_shared.lock();
+							moveVec = rmarkerInfo[marker];
 							Action::Result stop_result = action.hold(); //stop the drone now, because we dont want the vector to be incorrect
 							if (stop_result != Action::Result::Success)
 								curr_state = reset;
@@ -313,8 +350,27 @@ int main(int argc, char* argv[]) {
 				
 			case moving:
 				//if marker is not already hit, and marker is not ours, move to closest marker
+			
+
+			case reset:
+				const auto land_result = action.land();
+				if (land_result != Action::Result::Success) {
+					std::cerr << "Landing failed: " << land_result << std::endl;
+					return 1;
+				}
+				while (telemetry.in_air()) {
+					std::cout << "Currently landing";
+					sleep_for(1s);
+				}
+
+				std::cout << "Landed";
+
+				sleep_for(seconds(3));
+
+				return 0;
 
 		}
+			
 
 
 	}
@@ -326,22 +382,7 @@ int main(int argc, char* argv[]) {
 		//return 1;
 	//}
 
-	const auto land_result = action.land();
-	if (land_result != Action::Result::Success) {
-		std::cerr << "Landing failed: " << land_result << std::endl;
-		return 1;
-	}
-	while (telemetry.in_air()) {
-		std::cout << "Currently landing";
-		sleep_for(1s);
-	}
-
-	std::cout << "Landed";
-
-	sleep_for(seconds(3));
-
-	return 0;
-
+	
 
 
 	/*
