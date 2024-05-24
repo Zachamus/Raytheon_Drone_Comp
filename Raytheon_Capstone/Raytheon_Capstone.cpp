@@ -14,9 +14,11 @@
 #include <GeographicLib/Geodesic.hpp>
 #include <unordered_set>
 #include <shared_mutex>
+#include <opencv2/aruco.hpp>
+#include <opencv2/highgui.hpp>
 
 
-//using namespace cv;
+using namespace cv;
 using namespace std;
 using namespace mavsdk;
 using std::chrono::seconds;
@@ -37,7 +39,7 @@ Telemetry::Quaternion mult(Telemetry::Quaternion a, Telemetry::Quaternion b) {
 	result.w = a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z;
 	result.x = a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y;
 	result.y = a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x;
-	result.z = 
+
 }
 
 
@@ -110,73 +112,6 @@ std::vector<std::pair<double,double>> SearchAlgo(double lat1, double long1, doub
 
 
 
-bool offb_ctrl_body(mavsdk::Offboard& offboard)
-{
-	std::cout << "Starting Offboard velocity control in body coordinates\n";
-
-	// Send it once before starting offboard, otherwise it will be rejected.
-	Offboard::VelocityBodyYawspeed stay{};
-	offboard.set_velocity_body(stay);
-
-	Offboard::Result offboard_result = offboard.start();
-	if (offboard_result != Offboard::Result::Success) {
-		std::cerr << "Offboard start failed: " << offboard_result << '\n';
-		return false;
-	}
-	std::cout << "Offboard started\n";
-
-	std::cout << "Turn clock-wise and climb\n";
-	Offboard::VelocityBodyYawspeed cc_and_climb{};
-	cc_and_climb.down_m_s = -1.0f;
-	cc_and_climb.yawspeed_deg_s = 60.0f;
-	offboard.set_velocity_body(cc_and_climb);
-	sleep_for(seconds(5));
-
-	std::cout << "Turn back anti-clockwise\n";
-	Offboard::VelocityBodyYawspeed ccw{};
-	ccw.down_m_s = -1.0f;
-	ccw.yawspeed_deg_s = -60.0f;
-	offboard.set_velocity_body(ccw);
-	sleep_for(seconds(5));
-
-	std::cout << "Wait for a bit\n";
-	offboard.set_velocity_body(stay);
-	sleep_for(seconds(2));
-
-	std::cout << "Fly a circle\n";
-	Offboard::VelocityBodyYawspeed circle{};
-	circle.forward_m_s = 5.0f;
-	circle.yawspeed_deg_s = 30.0f;
-	offboard.set_velocity_body(circle);
-	sleep_for(seconds(15));
-
-	std::cout << "Wait for a bit\n";
-	offboard.set_velocity_body(stay);
-	sleep_for(seconds(5));
-
-	std::cout << "Fly a circle sideways\n";
-	circle.right_m_s = -5.0f;
-	circle.yawspeed_deg_s = 30.0f;
-	offboard.set_velocity_body(circle);
-	sleep_for(seconds(15));
-
-	std::cout << "Wait for a bit\n";
-	offboard.set_velocity_body(stay);
-	sleep_for(seconds(8));
-
-	offboard_result = offboard.stop();
-	if (offboard_result != Offboard::Result::Success) {
-		std::cerr << "Offboard stop failed: " << offboard_result << '\n';
-		return false;
-	}
-	std::cout << "Offboard stopped\n";
-
-	return true;
-}
-
-
-
-
 
 
 enum states {
@@ -222,7 +157,108 @@ namespace {
 
 
 int Thread2() { //second thread running OpenCV giving results to shared resource that main thread can only view
-	return 0;
+    cv::VideoCapture inputVideo(0);
+    cv::aruco::DetectorParameters detectorParams = cv::aruco::DetectorParameters();
+    cv::aruco::Dictionary dictionary = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_6X6_250);
+    //CommandLineParser parser(argc, argv, keys);
+    //parser.about(about);
+    bool showRejected = false;
+    bool estimatePose = false;
+    float markerLength = 1;
+    cv::aruco::ArucoDetector detector(dictionary, detectorParams);
+
+    if (!inputVideo.isOpened())
+    {
+        std::cout << "Problem connecting to cam " << std::endl;
+        return -1;
+    }
+    else
+    if (true)
+    {
+        std::cout << "Successfuly connected to camera " << std::endl;
+
+        inputVideo.set(cv::CAP_PROP_FOURCC, cv::VideoWriter::fourcc('M', 'J', 'P', 'G'));
+
+        int ex = (int)inputVideo.get(cv::CAP_PROP_FOURCC);
+        char EXT[] = { (char)(ex & 0XFF),(char)((ex & 0XFF00) >> 8),(char)((ex & 0XFF0000) >> 16),(char)((ex & 0XFF000000) >> 24),0 };
+        std::cout << "CAP_PROP_FOURCC: " << EXT << std::endl;
+
+        inputVideo.set(cv::CAP_PROP_FRAME_WIDTH, 1920);
+        inputVideo.set(cv::CAP_PROP_FRAME_HEIGHT, 1080);
+        inputVideo.set(cv::CAP_PROP_FPS, 60);
+
+    }
+
+    int frameCounter = 0;
+    int tick = 0;
+    int fps;
+    std::time_t timeBegin = std::time(0);
+
+    cv::Mat frame;
+    double totalTime = 0;
+    int totalIterations = 0;
+
+    //! [aruco_pose_estimation2]
+    // set coordinate system
+    cv::Mat objPoints(4, 1, CV_32FC3);
+    objPoints.ptr<Vec3f>(0)[0] = Vec3f(-markerLength / 2.f, markerLength / 2.f, 0);
+    objPoints.ptr<Vec3f>(0)[1] = Vec3f(markerLength / 2.f, markerLength / 2.f, 0);
+    objPoints.ptr<Vec3f>(0)[2] = Vec3f(markerLength / 2.f, -markerLength / 2.f, 0);
+    objPoints.ptr<Vec3f>(0)[3] = Vec3f(-markerLength / 2.f, -markerLength / 2.f, 0);
+    //! [aruco_pose_estimation2]
+
+    while (inputVideo.grab()) {
+        cv::Mat image, imageCopy;
+        inputVideo.retrieve(image);
+
+        double tick = (double)getTickCount();
+
+        //! [aruco_pose_estimation3]
+        vector<int> ids;
+        vector<vector<Point2f> > corners, rejected;
+
+        // detect markers and estimate pose
+        detector.detectMarkers(image, corners, ids, rejected);
+
+        size_t nMarkers = corners.size();
+        vector<Vec3d> rvecs(nMarkers), tvecs(nMarkers);
+
+        if (estimatePose && !ids.empty()) {
+            // Calculate pose for each marker
+            for (size_t i = 0; i < nMarkers; i++) {
+                //solvePnP(objPoints, corners.at(i), camMatrix, distCoeffs, rvecs.at(i), tvecs.at(i));
+            }
+        }
+        //! [aruco_pose_estimation3]
+        double currentTime = ((double)getTickCount() - tick) / getTickFrequency();
+        totalTime += currentTime;
+        totalIterations++;
+        /*if (totalIterations % 30 == 0) {
+            cout << "Detection Time = " << currentTime * 1000 << " ms "
+                << "(Mean = " << 1000 * totalTime / double(totalIterations) << " ms)" << endl;
+        }*/
+        //! [aruco_draw_pose_estimation]
+        // draw results
+        // image.copyTo(imageCopy);
+        if (!ids.empty()) {
+            cv::aruco::drawDetectedMarkers(image, corners, ids);
+
+            if (estimatePose) {
+                for (unsigned int i = 0; i < ids.size(); i++)
+                    break;
+                //cv::drawFrameAxes(imageCopy, camMatrix, distCoeffs, rvecs[i], tvecs[i], markerLength * 1.5f, 2);
+
+            }
+        }
+        //! [aruco_draw_pose_estimation]
+
+        if (showRejected && !rejected.empty())
+            cv::aruco::drawDetectedMarkers(image, rejected, noArray(), Scalar(100, 0, 255));
+
+        imshow("out", image);
+        char key = (char)waitKey(1);
+    }
+    //! [aruco_detect_markers]
 }
 
 
@@ -237,6 +273,9 @@ int main(int argc, char* argv[]) {
 	for (const auto& joe : out) {
 		std::cout << joe.first << " " << joe.second << std::endl; //print gps coords
 	}
+    std::thread t1(Thread2);
+
+
 
 	Mavsdk mavsdk{Mavsdk::Configuration{Mavsdk::ComponentType::CompanionComputer}};
 	mavsdk::ConnectionResult conn_result = mavsdk.add_any_connection("serial:///dev/ttyAMA0:57600");
@@ -297,17 +336,19 @@ int main(int argc, char* argv[]) {
 	double global_alt = curr_alt.altitude_amsl_m;
 	Telemetry::ActuatorOutputStatus joe = telemetry.actuator_output_status();
 	std::vector<float> moveVec;
+    bool marker_found = false;
+    Action::Result gps_res;
 
 	while (1) {
 		switch (curr_state) {
-			case searching: 
-				Action::Result gps_res = action.goto_location(out[searchIndex].first, out[searchIndex].second, global_alt, 0.0);
+			case searching:
+				 gps_res = action.goto_location(out[searchIndex].first, out[searchIndex].second, global_alt, 0.0);
 				if (gps_res != Action::Result::Success) {
 					std::cout << "Fucked" << std::endl;
 					curr_state = reset;
 					break;
 				}
-				bool marker_found = false;
+
 				//need to take mutex right before we check the markerInfo vector
 				while ((abs(telemetry.position().latitude_deg - out[searchIndex].first) > 0.00001) || (abs(telemetry.position().longitude_deg - out[searchIndex].second) > 0.00001)) {
 					if (!(markerInfo.empty())) {
@@ -347,10 +388,10 @@ int main(int argc, char* argv[]) {
 				}
 				searchIndex++;
 				sleep_for(1s);
-				
+
 			case moving:
 				//if marker is not already hit, and marker is not ours, move to closest marker
-			
+
 
 			case reset:
 				const auto land_result = action.land();
