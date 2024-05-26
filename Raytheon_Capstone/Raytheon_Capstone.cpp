@@ -35,12 +35,14 @@ std::unordered_set<int> hitMarkers;
 std::vector<int> markers;
 std::mutex m; //shared mutex might be best here, lots of read operations and not a bunch of write ops
 bool marker_found = false;
-cv::Mat cameraMatrix = (cv::Mat_<double>(3, 3) <<   1913.71011, 0, 1311.03556,
-                                                    0, 1909.60756, 953.81594,
+cv::Mat cameraMatrix = (cv::Mat_<double>(3, 3) << 1420.40904, 0, 963.189814,
+                                                    0, 1419.58763, 541.813445,
                                                     0, 0, 1);
 
+cv::Mat distCoeffs = (cv::Mat_<double>(1, 5) << -0.0147016237, 0.419899926, 0.000778167404, -0.000997227127, -0.844393910);
 
-cv::Mat distCoeff;
+
+
 enum states {
     init,
     searching,
@@ -257,7 +259,7 @@ int Thread2() { //second thread running OpenCV giving results to shared resource
             // Calculate pose for each marker
             for (size_t i = 0; i < nMarkers; i++) {
                 if (ids.at(i) != 23) {
-                    solvePnP(objPoints, corners.at(i), cameraMatrix, distCoeff, rvecs.at(i), tvecs.at(i));
+                    solvePnP(objPoints, corners.at(i), cameraMatrix, distCoeffs, rvecs.at(i), tvecs.at(i));
                     m.lock(); //take mutex, need to write to hash map
                     rmarkerInfo[ids.at(i)] = tvecs.at(i);
                     m.unlock(); //release, might be a better way to write after getting all tvecs and rvecs but shouldnt matter much
