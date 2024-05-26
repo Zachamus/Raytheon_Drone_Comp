@@ -38,6 +38,8 @@ bool marker_found = false;
 cv::Mat cameraMatrix = (cv::Mat_<double>(3, 3) <<   1913.71011, 0, 1311.03556,
                                                     0, 1909.60756, 953.81594,
                                                     0, 0, 1);
+
+
 cv::Mat distCoeff;
 enum states {
     init,
@@ -54,7 +56,8 @@ Telemetry::Quaternion mult(Telemetry::Quaternion a, Telemetry::Quaternion b) {
 	result.w = a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z;
 	result.x = a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y;
 	result.y = a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x;
-
+    result.z = a.w*b.z + a.x*b.y - a.y*b.x + a.z*b.w;
+    return result;
 }
 
 std::pair<int, Vec3d> markerScan() {
@@ -78,7 +81,7 @@ std::pair<int, Vec3d> markerScan() {
 
 
 
-std::vector<float> convertToNED(Telemetry::Quaternion q, std::vector<float> localVec) { //convert to NED frame
+std::vector<float> convertToNED(Telemetry::Quaternion q, Vec3d localVec) { //convert to NED frame
 	Telemetry::Quaternion localquat;
 	localquat.w = 0;					//create dummy quaternion for local vec
 	localquat.x = localVec[0];
@@ -87,12 +90,16 @@ std::vector<float> convertToNED(Telemetry::Quaternion q, std::vector<float> loca
 	Telemetry::Quaternion inverseNed;
 	float inverseNedSqrd = q.w * q.w + q.x * q.x + q.y * q.y + q.z * q.z;
 	inverseNed.w = q.w / inverseNedSqrd;
-	inverseNed.x = q.x / inverseNedSqrd;
-	inverseNed.y = q.y / inverseNedSqrd;
-	inverseNed.z = q.z / inverseNedSqrd;
+	inverseNed.x = -q.x / inverseNedSqrd;
+	inverseNed.y = -q.y / inverseNedSqrd;
+	inverseNed.z = -q.z / inverseNedSqrd;
+
+    Telemetry::Quaternion qVec = mult(q, localquat);
+    Telemetry::Quaternion finalVec = mult(qVec, inverseNed);
+    std::vector<float> returnVec = {finalVec.x, finalVec.y, finalVec.z};
+    return returnVec;
 
 	//now perform q * localquat * q^-1 result will also be a dummy quat, the imaginary part will be the vector we want
-
 }
 
 
@@ -356,6 +363,15 @@ int main(int argc, char* argv[]) {
     Telemetry::ActuatorOutputStatus joe = telemetry.actuator_output_status();
     std::pair<int, Vec3d> moveVec;
     Action::Result gps_res;
+    Telemetry::Quaternion qNED;
+    std::vector<float> vecNED;
+    bool too_far;
+    geometry::CoordinateTransformation::LocalCoordinate localCoord;
+    geometry::CoordinateTransformation::GlobalCoordinate globalCoord;
+    Offboard::Result offboard_result;
+    const Offboard::VelocityNedYaw stay{};
+    Offboard::PositionNedYaw movePos{};
+
 
     while (1) {
         switch (curr_state) {
@@ -414,6 +430,55 @@ int main(int argc, char* argv[]) {
 
             case moving:
                 //if marker is not already hit, and marker is not ours, move to closest marker
+                if (telemetry.flight_mode() == Telemetry::FlightMode::Altctl) {
+                    action.hold();
+                    curr_state = reset;
+                    break;
+                }
+                qNED = telemetry.attitude_quaternion();
+                vecNED = convertToNED(qNED, moveVec.second);
+                for (int i = 0; i < vecNED.size(); i++) {
+                    if (vecNED[i] > 30)
+                        too_far = true;
+                }
+                if (too_far) {
+                    curr_state = reset;
+                    std::cout << "NED vec is too far you fucking RETARD " << std::endl;
+                    break;
+                }
+                std::cout << "Starting Offboard velocity control in NED coordinates\n";
+
+                // Send it once before starting offboard, otherwise it will be rejected.
+
+                offboard.set_velocity_ned(stay);
+                offboard_result = offboard.start();
+                if (offboard_result != Offboard::Result::Success) {
+                    std::cerr << "Offboard start failed: " << offboard_result << '\n';
+                    curr_state = reset;
+                    break;
+                }
+                movePos.north_m = vecNED[0];
+                movePos.east_m = vecNED[1];
+                movePos.down_m = 0;
+                movePos.yaw_deg = 0;
+                offboard_result = offboard.set_position_ned(movePos);
+
+                if (offboard_result != Offboard::Result::Success) {
+                    std::cout << "Offboard move failed " << std::endl;
+                    curr_state = reset;
+                    break;
+                }
+
+                sleep_for(5s);
+
+                offboard_result = offboard.stop();
+                if (offboard_result != Offboard::Result::Success) {
+                    std::cerr << "Offboard stop failed: " << offboard_result << '\n';
+                    curr_state = reset;
+                    break;
+                }
+                curr_state = searching;
+                break;
 
 
 
