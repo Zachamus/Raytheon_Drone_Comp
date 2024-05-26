@@ -401,7 +401,7 @@ int main(int argc, char* argv[]) {
                 //need to take mutex right before we check the markerInfo vector
                 while ((abs(telemetry.position().latitude_deg - out[searchIndex].first) > 0.00001) ||
                        (abs(telemetry.position().longitude_deg - out[searchIndex].second) > 0.00001)) {
-                    m.lock();
+                    /*m.lock();
                     if (((rmarkerInfo.find(22) != rmarkerInfo.end()) && (hitMarkers.find(22) == hitMarkers.end())) || ((rmarkerInfo.find(24) != rmarkerInfo.end()) && (hitMarkers.find(24) == hitMarkers.end()))) {
                         Action::Result hold_res = action.hold();
                         if (hold_res != Action::Result::Success) {
@@ -411,8 +411,9 @@ int main(int argc, char* argv[]) {
                         moveVec  = markerScan();
                     } else
                         m.unlock();
+                        */
                     // now release the mutex
-                    sleep_for(0.2s); //not sure if this is needed I think it isnt
+                     //not sure if this is needed I think it isnt
                     std::cout << "Drone not at pos yet, we are at: " << telemetry.position().latitude_deg
                               << " latitude, and: " << telemetry.position().longitude_deg << " longitude" << std::endl;
                     std::cout << "We should be at: " << out[searchIndex].first << ", " << out[searchIndex].second
