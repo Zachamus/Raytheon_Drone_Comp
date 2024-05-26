@@ -258,6 +258,7 @@ int Thread2() { //second thread running OpenCV giving results to shared resource
         if (estimatePose && !ids.empty()) {
             // Calculate pose for each marker
             for (size_t i = 0; i < nMarkers; i++) {
+                std::cout << ids.at(i) << std::endl;
                 if (ids.at(i) != 23) {
                     solvePnP(objPoints, corners.at(i), cameraMatrix, distCoeffs, rvecs.at(i), tvecs.at(i));
                     m.lock(); //take mutex, need to write to hash map
