@@ -288,6 +288,7 @@ int Thread2() { //second thread running OpenCV giving results to shared resource
         char key = (char)waitKey(1);
     }
     //! [aruco_detect_markers]
+    return 0;
 }
 
 
@@ -381,12 +382,17 @@ int main(int argc, char* argv[]) {
                     curr_state = reset;
                     break;
                 }
+                if (searchIndex == out.size() - 1) {
+                    curr_state = reset;
+                    break;
+                }
                 gps_res = action.goto_location(out[searchIndex].first, out[searchIndex].second, global_alt, 0.0);
                 if (gps_res != Action::Result::Success) {
                     std::cout << "Fucked" << std::endl;
                     curr_state = reset;
                     break;
                 }
+
 
                 //need to take mutex right before we check the markerInfo vector
                 while ((abs(telemetry.position().latitude_deg - out[searchIndex].first) > 0.00001) ||
