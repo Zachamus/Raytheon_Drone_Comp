@@ -298,6 +298,7 @@ int main(int argc, char* argv[]) {
 
     curr_state = searching;
     std::cout.precision(15);
+    std::thread t1(Thread2);
     sleep_for(10s);
     //calculate Search gps coordinates
     std::vector<pair<double, double>> out = SearchAlgo(34.4193286, -119.8555100, 34.4193164, -119.8559169, 34.4193286,
@@ -305,7 +306,7 @@ int main(int argc, char* argv[]) {
     for (const auto &joe: out) {
         std::cout << joe.first << " " << joe.second << std::endl; //print gps coords
     }
-    //std::thread t1(Thread2);
+    
 
 
     Mavsdk mavsdk{Mavsdk::Configuration{Mavsdk::ComponentType::CompanionComputer}};
