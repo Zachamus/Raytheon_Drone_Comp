@@ -16,6 +16,7 @@
 #include <shared_mutex>
 #include <opencv2/aruco.hpp>
 #include <opencv2/highgui.hpp>
+#include <opencv2/opencv.hpp>
 
 
 using namespace cv;
@@ -28,11 +29,25 @@ const vector<pair<double, double>> searchVec1 = { {0,7.5},{10,0},{10,0},{10,0},{
 												{10,0}, {10,0}, {10,0}, {10,0}, {10,0}, };
 int searchIndex{ 0 };
 std::vector<int> markerInfo;
-std::unordered_map<int, std::vector<float>> rmarkerInfo;
+std::unordered_map<int, Vec3d> rmarkerInfo;
 std::unordered_set<int> hitMarkers;
 //std::mutex markerMutex;
 std::vector<int> markers;
-std::shared_mutex mutex_shared; //shared mutex might be best here, lots of read operations and not a bunch of write ops
+std::mutex m; //shared mutex might be best here, lots of read operations and not a bunch of write ops
+bool marker_found = false;
+cv::Mat cameraMatrix = (cv::Mat_<double>(3, 3) <<   1913.71011, 0, 1311.03556,
+                                                    0, 1909.60756, 953.81594,
+                                                    0, 0, 1);
+cv::Mat distCoeff;
+enum states {
+    init,
+    searching,
+    moving,
+    dropping,
+    reset
+}curr_state;
+
+
 
 Telemetry::Quaternion mult(Telemetry::Quaternion a, Telemetry::Quaternion b) {
 	Telemetry::Quaternion result;
@@ -41,6 +56,26 @@ Telemetry::Quaternion mult(Telemetry::Quaternion a, Telemetry::Quaternion b) {
 	result.y = a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x;
 
 }
+
+std::pair<int, Vec3d> markerScan() {
+    double lowest = 50;
+    std::pair<int, Vec3d> moveVec;
+
+    for (auto [key, val]: rmarkerInfo) {
+        if (hitMarkers.find(key) == hitMarkers.end()) {
+            if (norm(val) < lowest) {
+                lowest = norm(val);
+                curr_state = moving;//marker is found and not in the hash set of markers that we've deployed water on
+                moveVec.second = val;
+                moveVec.first = key;
+
+            }
+        }
+
+    }
+    return moveVec;
+}
+
 
 
 std::vector<float> convertToNED(Telemetry::Quaternion q, std::vector<float> localVec) { //convert to NED frame
@@ -57,10 +92,6 @@ std::vector<float> convertToNED(Telemetry::Quaternion q, std::vector<float> loca
 	inverseNed.z = q.z / inverseNedSqrd;
 
 	//now perform q * localquat * q^-1 result will also be a dummy quat, the imaginary part will be the vector we want
-
-
-
-
 
 }
 
@@ -114,14 +145,6 @@ std::vector<std::pair<double,double>> SearchAlgo(double lat1, double long1, doub
 
 
 
-enum states {
-	init,
-	searching,
-	moving,
-	dropping,
-	reset
-}curr_state;
-
 
 
 namespace {
@@ -163,7 +186,7 @@ int Thread2() { //second thread running OpenCV giving results to shared resource
     //CommandLineParser parser(argc, argv, keys);
     //parser.about(about);
     bool showRejected = false;
-    bool estimatePose = false;
+    bool estimatePose = true;
     float markerLength = 1;
     cv::aruco::ArucoDetector detector(dictionary, detectorParams);
 
@@ -226,13 +249,18 @@ int Thread2() { //second thread running OpenCV giving results to shared resource
         if (estimatePose && !ids.empty()) {
             // Calculate pose for each marker
             for (size_t i = 0; i < nMarkers; i++) {
-                //solvePnP(objPoints, corners.at(i), camMatrix, distCoeffs, rvecs.at(i), tvecs.at(i));
+                if (ids.at(i) != 23) {
+                    solvePnP(objPoints, corners.at(i), cameraMatrix, distCoeff, rvecs.at(i), tvecs.at(i));
+                    m.lock(); //take mutex, need to write to hash map
+                    rmarkerInfo[ids.at(i)] = tvecs.at(i);
+                    m.unlock(); //release, might be a better way to write after getting all tvecs and rvecs but shouldnt matter much
+                }
             }
         }
         //! [aruco_pose_estimation3]
-        double currentTime = ((double)getTickCount() - tick) / getTickFrequency();
-        totalTime += currentTime;
-        totalIterations++;
+        //double currentTime = ((double)getTickCount() - tick) / getTickFrequency();
+        //totalTime += currentTime;
+        //totalIterations++;
         /*if (totalIterations % 30 == 0) {
             cout << "Detection Time = " << currentTime * 1000 << " ms "
                 << "(Mean = " << 1000 * totalTime / double(totalIterations) << " ms)" << endl;
@@ -240,22 +268,16 @@ int Thread2() { //second thread running OpenCV giving results to shared resource
         //! [aruco_draw_pose_estimation]
         // draw results
         // image.copyTo(imageCopy);
-        if (!ids.empty()) {
-            cv::aruco::drawDetectedMarkers(image, corners, ids);
-
-            if (estimatePose) {
-                for (unsigned int i = 0; i < ids.size(); i++)
-                    break;
-                //cv::drawFrameAxes(imageCopy, camMatrix, distCoeffs, rvecs[i], tvecs[i], markerLength * 1.5f, 2);
-
-            }
-        }
+//        if (!ids.empty()) {
+//            cv::aruco::drawDetectedMarkers(image, corners, ids);
+//
+//        }
         //! [aruco_draw_pose_estimation]
 
-        if (showRejected && !rejected.empty())
-            cv::aruco::drawDetectedMarkers(image, rejected, noArray(), Scalar(100, 0, 255));
+        //if (showRejected && !rejected.empty())
+            //cv::aruco::drawDetectedMarkers(image, rejected, noArray(), Scalar(100, 0, 255));
 
-        imshow("out", image);
+        //imshow("out", image);
         char key = (char)waitKey(1);
     }
     //! [aruco_detect_markers]
@@ -265,252 +287,157 @@ int Thread2() { //second thread running OpenCV giving results to shared resource
 
 
 int main(int argc, char* argv[]) {
-	curr_state = searching;
-	std::cout.precision(15);
-	sleep_for(10s);
-	//calculate Search gps coordinates
-	std::vector<pair<double,double>> out = SearchAlgo(34.4193286, -119.8555100, 34.4193164, -119.8559169, 34.4193286, -119.8555100, 34.419237, -119.856216, 30.0, searchVec1); 
-	for (const auto& joe : out) {
-		std::cout << joe.first << " " << joe.second << std::endl; //print gps coords
-	}
-    std::thread t1(Thread2);
+
+    curr_state = searching;
+    std::cout.precision(15);
+    sleep_for(10s);
+    //calculate Search gps coordinates
+    std::vector<pair<double, double>> out = SearchAlgo(34.4193286, -119.8555100, 34.4193164, -119.8559169, 34.4193286,
+                                                       -119.8555100, 34.419237, -119.856216, 30.0, searchVec1);
+    for (const auto &joe: out) {
+        std::cout << joe.first << " " << joe.second << std::endl; //print gps coords
+    }
+    //std::thread t1(Thread2);
 
 
+    Mavsdk mavsdk{Mavsdk::Configuration{Mavsdk::ComponentType::CompanionComputer}};
+    mavsdk::ConnectionResult conn_result = mavsdk.add_any_connection("serial:///dev/ttyAMA0:57600");
 
-	Mavsdk mavsdk{Mavsdk::Configuration{Mavsdk::ComponentType::CompanionComputer}};
-	mavsdk::ConnectionResult conn_result = mavsdk.add_any_connection("serial:///dev/ttyAMA0:57600");
+    if (conn_result != ConnectionResult::Success) {
+        std::cerr << "Connection failed: " << conn_result << '\n';
+        return 1;
+    }
 
-	if (conn_result != ConnectionResult::Success) {
-		std::cerr << "Connection failed: " << conn_result << '\n';
-		return 1;
-	}
-
-	auto system = mavsdk.first_autopilot(3.0);
-	auto offboard = mavsdk::Offboard{ system.value() };
-	auto action = mavsdk::Action{ system.value() };
-	auto telemetry = mavsdk::Telemetry{ system.value() };
-	
+    auto system = mavsdk.first_autopilot(3.0);
+    auto offboard = mavsdk::Offboard{system.value()};
+    auto action = mavsdk::Action{system.value()};
+    auto telemetry = mavsdk::Telemetry{system.value()};
 
 
+    while (telemetry.health_all_ok() == false) {
+        std::cout << "Telemetry not healthy" << std::endl;
+        std::this_thread::sleep_for(0.5s);
+    }
+    std::cout << "System is ready";
 
+    Action::Result set_altitude = action.set_takeoff_altitude(8.0);
+    Action::Result set_speed = action.set_maximum_speed(2.0);
 
-	while (telemetry.health_all_ok() == false) {
-		std::cout << "Telemetry not healthy" << std::endl;
-		std::this_thread::sleep_for(0.5s);
-	}
-	std::cout << "System is ready";
+    if (set_speed != Action::Result::Success) {
+        std::cerr << "Set Speed Failed" << std::endl;
+        return 1;
+    }
 
-	Action::Result set_altitude = action.set_takeoff_altitude(8.0);
-	Action::Result set_speed = action.set_maximum_speed(2.0);
+    if (set_altitude != Action::Result::Success) {
+        std::cerr << "Set altitude failed" << std::endl;
+        return 1;
+    }
+    while (telemetry.flight_mode() != Telemetry::FlightMode::Posctl) {
+        sleep_for(1s);
+    }
 
-	if (set_speed != Action::Result::Success) {
-		std::cerr << "Set Speed Failed" << std::endl;
-		return 1;
-	}
+    Action::Result arm_result = action.arm();
 
-	if (set_altitude != Action::Result::Success) {
-		std::cerr << "Set altitude failed" << std::endl;
-		return 1;
-	}
+    if (arm_result != Action::Result::Success) {
+        std::cerr << "Arm failed: " << arm_result << std::endl;
+        return 1;
+    }
+    //Telemetry::FlightMode curr_flight_mode;
 
-	Action::Result arm_result = action.arm();
+    Action::Result takeoff_result = action.takeoff();
 
-	if (arm_result != Action::Result::Success) {
-		std::cerr << "Arm failed: " << arm_result << std::endl;
-		return 1;
-	}
-	//Telemetry::FlightMode curr_flight_mode;
-
-	while (telemetry.flight_mode() != Telemetry::FlightMode::Posctl) {
-		sleep_for(1s);
-	}
-
-	Action::Result takeoff_result = action.takeoff();
-
-	if (takeoff_result != Action::Result::Success) {
-		std::cerr << "Takeoff failed: " << takeoff_result << std::endl;
-		return 1;
-	}
-	sleep_for(10s);
-	Telemetry::Altitude curr_alt = telemetry.altitude();
-	double global_alt = curr_alt.altitude_amsl_m;
-	Telemetry::ActuatorOutputStatus joe = telemetry.actuator_output_status();
-	std::vector<float> moveVec;
-    bool marker_found = false;
+    if (takeoff_result != Action::Result::Success) {
+        std::cerr << "Takeoff failed: " << takeoff_result << std::endl;
+        return 1;
+    }
+    sleep_for(10s);
+    Telemetry::Altitude curr_alt = telemetry.altitude();
+    double global_alt = curr_alt.altitude_amsl_m;
+    Telemetry::ActuatorOutputStatus joe = telemetry.actuator_output_status();
+    std::pair<int, Vec3d> moveVec;
     Action::Result gps_res;
 
-	while (1) {
-		switch (curr_state) {
-			case searching:
-				 gps_res = action.goto_location(out[searchIndex].first, out[searchIndex].second, global_alt, 0.0);
-				if (gps_res != Action::Result::Success) {
-					std::cout << "Fucked" << std::endl;
-					curr_state = reset;
-					break;
-				}
+    while (1) {
+        switch (curr_state) {
+            case searching:
+                if (telemetry.flight_mode() == Telemetry::FlightMode::Altctl) {
+                    action.hold();
+                    curr_state = reset;
+                    break;
+                }
+                gps_res = action.goto_location(out[searchIndex].first, out[searchIndex].second, global_alt, 0.0);
+                if (gps_res != Action::Result::Success) {
+                    std::cout << "Fucked" << std::endl;
+                    curr_state = reset;
+                    break;
+                }
 
-				//need to take mutex right before we check the markerInfo vector
-				while ((abs(telemetry.position().latitude_deg - out[searchIndex].first) > 0.00001) || (abs(telemetry.position().longitude_deg - out[searchIndex].second) > 0.00001)) {
-					if (!(markerInfo.empty())) {
-						for (auto marker : markerInfo) {
-							if (hitMarkers.find(marker) == hitMarkers.end()) {
-								curr_state = moving;
-								marker_found = true; //marker is found and not in the hash set
-								Action::Result stop_result = action.hold(); //stop the drone now, because we dont want the vector to be incorrect
-								if (stop_result != Action::Result::Success)
-									curr_state = reset;
-								break;
-							}
-						}
-					}
-					// now release the mutex
-					sleep_for(0.2s); //not sure if this is needed I think it isnt
-					std::cout << "Drone not at pos yet, we are at: " << telemetry.position().latitude_deg << " latitude, and: " << telemetry.position().longitude_deg << " longitude" << std::endl;
-					std::cout << "We should be at: " << out[searchIndex].first << ", " << out[searchIndex].second << std::endl;
-				}
-				if (marker_found) {
-					break; //break out of current state and go into either reset or moving depending on action result
-				}
-				std::cout << "We have reached the target location! Checking for markers and then sleeping!" << std::endl;
-				if (!(markerInfo.empty())) {
-					for (auto marker : markerInfo) {
-						if (hitMarkers.find(marker) == hitMarkers.end()) {
-							curr_state = moving;
-							marker_found = true; //marker is found and not in the hash set of markers that we've deployed water on
-							mutex_shared.lock();
-							moveVec = rmarkerInfo[marker];
-							Action::Result stop_result = action.hold(); //stop the drone now, because we dont want the vector to be incorrect
-							if (stop_result != Action::Result::Success)
-								curr_state = reset;
-							break;
-						}
-					}
-				}
-				searchIndex++;
-				sleep_for(1s);
+                //need to take mutex right before we check the markerInfo vector
+                while ((abs(telemetry.position().latitude_deg - out[searchIndex].first) > 0.00001) ||
+                       (abs(telemetry.position().longitude_deg - out[searchIndex].second) > 0.00001)) {
+                    m.lock();
+                    if (((rmarkerInfo.find(22) != rmarkerInfo.end()) && (hitMarkers.find(22) == hitMarkers.end())) || ((rmarkerInfo.find(24) != rmarkerInfo.end()) && (hitMarkers.find(24) == hitMarkers.end()))) {
+                        Action::Result hold_res = action.hold();
+                        if (hold_res != Action::Result::Success) {
+                            curr_state = reset;
+                            break;
+                        }
+                        moveVec  = markerScan();
+                    } else
+                        m.unlock();
+                    // now release the mutex
+                    sleep_for(0.2s); //not sure if this is needed I think it isnt
+                    std::cout << "Drone not at pos yet, we are at: " << telemetry.position().latitude_deg
+                              << " latitude, and: " << telemetry.position().longitude_deg << " longitude" << std::endl;
+                    std::cout << "We should be at: " << out[searchIndex].first << ", " << out[searchIndex].second
+                              << std::endl;
+                }
+                if (marker_found) {
+                    marker_found = false;
+                    break; //break out of current state and go into either reset or moving depending on action result
+                }
+                std::cout << "We have reached the target location! Checking for markers and then sleeping!"
+                          << std::endl;
+                m.lock();
+                if (((rmarkerInfo.find(22) != rmarkerInfo.end()) && (hitMarkers.find(22) == hitMarkers.end())) || ((rmarkerInfo.find(24) != rmarkerInfo.end()) && (hitMarkers.find(24) == hitMarkers.end()))) {
+                    Action::Result hold_res = action.hold();
+                    if (hold_res != Action::Result::Success) {
+                        curr_state = reset;
+                        break;
+                    }
+                    moveVec = markerScan();
+                    marker_found = false;
+                } else
+                    m.unlock();
+                searchIndex++;
+                sleep_for(1s);
 
-			case moving:
-				//if marker is not already hit, and marker is not ours, move to closest marker
-
-
-			case reset:
-				const auto land_result = action.land();
-				if (land_result != Action::Result::Success) {
-					std::cerr << "Landing failed: " << land_result << std::endl;
-					return 1;
-				}
-				while (telemetry.in_air()) {
-					std::cout << "Currently landing";
-					sleep_for(1s);
-				}
-
-				std::cout << "Landed";
-
-				sleep_for(seconds(3));
-
-				return 0;
-
-		}
-			
-
-
-	}
-
-
-	
-
-	//if (!offb_ctrl_body(offboard)) {
-		//return 1;
-	//}
-
-	
-
-
-	/*
-	while (1) {
-		switch (curr_state) {
-		case init:
-			if (reset_in) {
-				curr_state = reset;
-				break;
-			}
-			else {
-				bool gpio_init = init::gpio_init();
-				bool picam_init = init::picam_init();
-				assert(picam_init && gpio_init); //breaks program here if fail values returned
-				curr_state = search;
-				break;
-			}
-		case search:
-
-		{
-			while (!search::targetfound && !reset_in) { //need to make opencv class and have a pointer in order to do some read operations on other threads data, might need mutex 
-				search::mavsdkmission();
-			}
-			if (reset_in) {
-				curr_state = reset;
-				break;
-			}
-			else if (search::targetfound) {
-				curr_state = move;
-				break;
-			}
-
-
-		}
-
-
-		case move:
-			if (reset_in) {
-				curr_state = reset;
-				break;
-			}
-
-			else {
-				if (move::dist <= move::acceptable) {
-					curr_state = drop;
-					break;
-
-				}
-				move::mavsdklocalmove(move::dist);
-				curr_state = move;
-				break;
-
-			}
+            case moving:
+                //if marker is not already hit, and marker is not ours, move to closest marker
 
 
 
-		case drop:
-			if (reset_in) {
-				curr_state = reset;
-				break;
-			}
-			else {
-				drop::mavsdkdescend(drop::heighttodrop);
-				bool drop_success = drop::watergunfire();
-				if (drop_success)
-					curr_state = search;
-				curr_state = drop;
-				break;
-			}
+            case reset:
+                const auto land_result = action.land();
+                if (land_result != Action::Result::Success) {
+                    std::cerr << "Landing failed: " << land_result << std::endl;
+                    return 1;
+                }
+                while (telemetry.in_air()) {
+                    std::cout << "Currently landing";
+                    sleep_for(1s);
+                }
+
+                std::cout << "Landed";
+
+                sleep_for(seconds(3));
+
+                return 0;
+
+        }
 
 
-
-		case reset:
-			std::vector<int> pos = reset::mavsdkreturnhome();
-			bool reset_suc = reset::reset();
-
-			if (reset_suc) {
-				figure out reset logic, probably need to reset whole thing
-			}
-
-			else {
-				reset_suc = reset::reset(); //lol try again
-			}
+    }
 
 
-
-		}
-	}
-	*/
 }
