@@ -415,10 +415,10 @@ int main(int argc, char* argv[]) {
                         */
                     // now release the mutex
                      //not sure if this is needed I think it isnt
-                    std::cout << "Drone not at pos yet, we are at: " << telemetry.position().latitude_deg
-                              << " latitude, and: " << telemetry.position().longitude_deg << " longitude" << std::endl;
-                    std::cout << "We should be at: " << out[searchIndex].first << ", " << out[searchIndex].second
-                              << std::endl;
+                    //std::cout << "Drone not at pos yet, we are at: " << telemetry.position().latitude_deg
+                       //       << " latitude, and: " << telemetry.position().longitude_deg << " longitude" << std::endl;
+                    //std::cout << "We should be at: " << out[searchIndex].first << ", " << out[searchIndex].second
+                      //        << std::endl;
                 }
                 //if (marker_found) {
                    // marker_found = false;
