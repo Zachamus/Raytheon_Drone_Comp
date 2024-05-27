@@ -333,7 +333,7 @@ int main(int argc, char* argv[]) {
     std::cout << "System is ready";
 
     Action::Result set_altitude = action.set_takeoff_altitude(8.0);
-    Action::Result set_speed = action.set_maximum_speed(2.0);
+    Action::Result set_speed = action.set_maximum_speed(1.0);
 
     if (set_speed != Action::Result::Success) {
         std::cerr << "Set Speed Failed" << std::endl;
