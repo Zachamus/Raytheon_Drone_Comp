@@ -302,7 +302,7 @@ int main(int argc, char* argv[]) {
     curr_state = searching;
     std::cout.precision(15);
     std::thread t1(Thread2);
-    sleep_for(10s);
+    //sleep_for(10s);
     //calculate Search gps coordinates
     std::vector<pair<double, double>> out = SearchAlgo(34.4193286, -119.8555100, 34.4193164, -119.8559169, 34.4193286,
                                                        -119.8555100, 34.419237, -119.856216, 30.0, searchVec1);
@@ -390,6 +390,7 @@ int main(int argc, char* argv[]) {
                     curr_state = reset;
                     break;
                 }
+                std::cout << "Going to index " << searchIndex << std::endl;
                 gps_res = action.goto_location(out[searchIndex].first, out[searchIndex].second, global_alt, 0.0);
                 if (gps_res != Action::Result::Success) {
                     std::cout << "Fucked" << std::endl;
