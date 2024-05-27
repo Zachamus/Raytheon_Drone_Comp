@@ -396,7 +396,7 @@ int main(int argc, char* argv[]) {
                     curr_state = reset;
                     break;
                 }
-                searchIndex++;
+                
 
 
                 //need to take mutex right before we check the markerInfo vector
@@ -424,6 +424,7 @@ int main(int argc, char* argv[]) {
                    // marker_found = false;
                     //break; //break out of current state and go into either reset or moving depending on action result
                 //}
+                searchIndex++;
                 std::cout << "We have reached the target location! Checking for markers and then sleeping!"
                           << std::endl;
                 m.lock();
