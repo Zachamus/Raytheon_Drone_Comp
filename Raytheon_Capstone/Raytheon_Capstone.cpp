@@ -404,6 +404,7 @@ int main(int argc, char* argv[]) {
                 while ((abs(telemetry.position().latitude_deg - out[searchIndex].first) > 0.00001) ||
                        (abs(telemetry.position().longitude_deg - out[searchIndex].second) > 0.00001)) {
                     m.lock();
+		    std::cout << "We have taken the mutex" << std::endl;
                     if (((rmarkerInfo.find(22) != rmarkerInfo.end()) && (hitMarkers.find(22) == hitMarkers.end())) || ((rmarkerInfo.find(24) != rmarkerInfo.end()) && (hitMarkers.find(24) == hitMarkers.end()))) {
                         Action::Result hold_res = action.hold();
                         if (hold_res != Action::Result::Success) {
@@ -411,11 +412,13 @@ int main(int argc, char* argv[]) {
                             break;
                         }
                         moveVec  = markerScan();
+			std::cout << "We are running markerScan" << std::endl;
                         m.unlock();
                         break;
-                    } 
+                    } else {
+			m.unlock();
+                      }
                       
-                        
                     // now release the mutex
                      //not sure if this is needed I think it isnt
                     //std::cout << "Drone not at pos yet, we are at: " << telemetry.position().latitude_deg
@@ -423,10 +426,10 @@ int main(int argc, char* argv[]) {
                     //std::cout << "We should be at: " << out[searchIndex].first << ", " << out[searchIndex].second
                       //        << std::endl;
                 }
-                if (marker_found) {
-                    marker_found = false;
-                    break; //break out of current state and go into either reset or moving depending on action result
-                }
+                //if (marker_found) {
+                    //marker_found = false;
+                    //break; //break out of current state and go into either reset or moving depending on action result
+                //}
                 searchIndex++;
                 std::cout << "We have reached the target location! Checking for markers and then sleeping!"
                           << std::endl;
