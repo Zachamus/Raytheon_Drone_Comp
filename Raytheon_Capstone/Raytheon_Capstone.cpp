@@ -441,6 +441,7 @@ int main(int argc, char* argv[]) {
                 
                 
                 sleep_for(1s);
+                break;
 
             case moving:
                 //if marker is not already hit, and marker is not ours, move to closest marker
