@@ -396,6 +396,7 @@ int main(int argc, char* argv[]) {
                     curr_state = reset;
                     break;
                 }
+                searchIndex++;
 
 
                 //need to take mutex right before we check the markerInfo vector
@@ -419,10 +420,10 @@ int main(int argc, char* argv[]) {
                     std::cout << "We should be at: " << out[searchIndex].first << ", " << out[searchIndex].second
                               << std::endl;
                 }
-                if (marker_found) {
-                    marker_found = false;
-                    break; //break out of current state and go into either reset or moving depending on action result
-                }
+                //if (marker_found) {
+                   // marker_found = false;
+                    //break; //break out of current state and go into either reset or moving depending on action result
+                //}
                 std::cout << "We have reached the target location! Checking for markers and then sleeping!"
                           << std::endl;
                 m.lock();
@@ -437,11 +438,12 @@ int main(int argc, char* argv[]) {
                 }
                 m.unlock();
                 
-                searchIndex++;
+                
                 sleep_for(1s);
 
             case moving:
                 //if marker is not already hit, and marker is not ours, move to closest marker
+                std::cout << "We are in moving state: " << std::endl;
                 if (telemetry.flight_mode() == Telemetry::FlightMode::Altctl) {
                     action.hold();
                     curr_state = reset;
