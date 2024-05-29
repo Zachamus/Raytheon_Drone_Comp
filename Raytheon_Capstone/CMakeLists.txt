@@ -9,14 +9,18 @@ add_executable(Raytheon_Capstone
     Raytheon_Capstone.cpp
     Header.h
 )
-set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "/home/zach/Downloads/GeographicLib-2.3/cmake")
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "/home/raytheon/Downloads/GeographicLib-2.3/cmake")
 find_package(GeographicLib REQUIRED)
 find_package(MAVSDK REQUIRED)
 find_package(OpenCV REQUIRED)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(LIBCAMERA REQUIRED libcamera)
 
 include_directories(${GeographicLib_INCLUDE_DIRS})
 target_link_libraries(Raytheon_Capstone ${GeographicLib_LIBRARIES})
 target_link_libraries( Raytheon_Capstone ${OpenCV_LIBS} )
+include_directories(${LIBCAMERA_INCLUDE_DIRS} ${OPENCV_INCLUDE_DIRS})
+target_link_libraries(Raytheon_Capstone -llccv ${OpenCV_LIBS})
 
 target_link_libraries(Raytheon_Capstone
     MAVSDK::mavsdk

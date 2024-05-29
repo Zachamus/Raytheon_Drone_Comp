@@ -17,6 +17,7 @@
 #include <opencv2/aruco.hpp>
 #include <opencv2/highgui.hpp>
 #include <opencv2/opencv.hpp>
+#include <lccv.hpp>
 
 
 using namespace cv;
@@ -189,119 +190,100 @@ namespace {
 
 
 int Thread2() { //second thread running OpenCV giving results to shared resource that main thread can only view
-    cv::VideoCapture inputVideo(0);
-    cv::aruco::DetectorParameters detectorParams = cv::aruco::DetectorParameters();
-    cv::aruco::Dictionary dictionary = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_6X6_250);
     //CommandLineParser parser(argc, argv, keys);
     //parser.about(about);
     bool showRejected = false;
     bool estimatePose = true;
     float markerLength = 1;
+    lccv::PiCamera cam;
+    cam.options->video_width=1920;
+    cam.options->video_height=1080;
+    cam.options->framerate=30;
+    cam.options->verbose=true;
+    cv::namedWindow("Video",cv::WINDOW_NORMAL);
+    cam.startVideo();
+    cv::aruco::DetectorParameters detectorParams = cv::aruco::DetectorParameters();
+    cv::aruco::Dictionary dictionary = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_6X6_250);
     cv::aruco::ArucoDetector detector(dictionary, detectorParams);
-
-    if (!inputVideo.isOpened())
-    {
-        std::cout << "Problem connecting to cam " << std::endl;
-        return -1;
-    }
-    else
-    if (true)
-    {
-        std::cout << "Successfuly connected to camera " << std::endl;
-
-        inputVideo.set(cv::CAP_PROP_FOURCC, cv::VideoWriter::fourcc('M', 'J', 'P', 'G'));
-
-        int ex = (int)inputVideo.get(cv::CAP_PROP_FOURCC);
-        char EXT[] = { (char)(ex & 0XFF),(char)((ex & 0XFF00) >> 8),(char)((ex & 0XFF0000) >> 16),(char)((ex & 0XFF000000) >> 24),0 };
-        std::cout << "CAP_PROP_FOURCC: " << EXT << std::endl;
-
-        inputVideo.set(cv::CAP_PROP_FRAME_WIDTH, 1920);
-        inputVideo.set(cv::CAP_PROP_FRAME_HEIGHT, 1080);
-        inputVideo.set(cv::CAP_PROP_FPS, 60);
-
-    }
-
-    int frameCounter = 0;
-    int tick = 0;
-    int fps;
-    std::time_t timeBegin = std::time(0);
-
     cv::Mat frame;
-    double totalTime = 0;
-    int totalIterations = 0;
 
-    //! [aruco_pose_estimation2]
-    // set coordinate system
+
+
+
+    
+    //cv::VideoWriter outputVideo;
+    //int frame_width = static_cast<int>(inputVideo.get(cv::CAP_PROP_FRAME_WIDTH));
+    //int frame_height = static_cast<int>(inputVideo.get(cv::CAP_PROP_FRAME_HEIGHT));
+    //outputVideo.open("output.avi", cv::VideoWriter::fourcc('B', 'G', 'R', '3'), 20, cv::Size(frame_width, frame_height), true);
+
     cv::Mat objPoints(4, 1, CV_32FC3);
     objPoints.ptr<Vec3f>(0)[0] = Vec3f(-markerLength / 2.f, markerLength / 2.f, 0);
     objPoints.ptr<Vec3f>(0)[1] = Vec3f(markerLength / 2.f, markerLength / 2.f, 0);
     objPoints.ptr<Vec3f>(0)[2] = Vec3f(markerLength / 2.f, -markerLength / 2.f, 0);
     objPoints.ptr<Vec3f>(0)[3] = Vec3f(-markerLength / 2.f, -markerLength / 2.f, 0);
-    //! [aruco_pose_estimation2]
+    while (true) {
+        // Capture frame-by-frame
+        //cap >> frame;
 
-    while (inputVideo.grab()) {
-        cv::Mat image, imageCopy;
-        inputVideo.retrieve(image);
+        // If the frame is empty, break immediately
+        if(!cam.getVideoFrame(frame,1000)){
+            std::cout<<"Timeout error"<<std::endl;
+        }
+        else {
+            std::vector<int> markerIds;
+            std::vector<std::vector<cv::Point2f>> markerCorners;
+            detector.detectMarkers(frame, markerCorners, markerIds);
+	    
 
-        double tick = (double)getTickCount();
+    
 
         //! [aruco_pose_estimation3]
-        vector<int> ids;
-        vector<vector<Point2f> > corners, rejected;
 
         // detect markers and estimate pose
-        detector.detectMarkers(image, corners, ids, rejected);
+        //detector.detectMarkers(image, corners, ids, rejected);
 
-        size_t nMarkers = corners.size();
+        size_t nMarkers = markerCorners.size();
         vector<Vec3d> rvecs(nMarkers), tvecs(nMarkers);
+	 /*if (!markerIds.empty()) {
+                cv::aruco::drawDetectedMarkers(frame, markerCorners, markerIds);
+            }
+	    cv::imshow("Video", frame);*/
+	
 
-        if (estimatePose && !ids.empty()) {
+        if (estimatePose && !markerIds.empty()) {
             // Calculate pose for each marker
+	    std::cout << "We have detected a marker" << std::endl;
             for (size_t i = 0; i < nMarkers; i++) {
-                std::cout << ids.at(i) << std::endl;
-                if (ids.at(i) != 23) {
-                    solvePnP(objPoints, corners.at(i), cameraMatrix, distCoeffs, rvecs.at(i), tvecs.at(i));
+                std::cout << markerIds.at(i) << std::endl;
+                if (markerIds.at(i) != 23) {
+                    solvePnP(objPoints, markerCorners.at(i), cameraMatrix, distCoeffs, rvecs.at(i), tvecs.at(i));
                     m.lock(); //take mutex, need to write to hash map
-                    rmarkerInfo[ids.at(i)] = tvecs.at(i);
+                    rmarkerInfo[markerIds.at(i)] = tvecs.at(i);
                     m.unlock(); //release, might be a better way to write after getting all tvecs and rvecs but shouldnt matter much
                 }
             }
         }
-        //! [aruco_pose_estimation3]
-        //double currentTime = ((double)getTickCount() - tick) / getTickFrequency();
-        //totalTime += currentTime;
-        //totalIterations++;
-        /*if (totalIterations % 30 == 0) {
-            cout << "Detection Time = " << currentTime * 1000 << " ms "
-                << "(Mean = " << 1000 * totalTime / double(totalIterations) << " ms)" << endl;
-        }*/
-        //! [aruco_draw_pose_estimation]
-        // draw results
-        // image.copyTo(imageCopy);
-//        if (!ids.empty()) {
-//            cv::aruco::drawDetectedMarkers(image, corners, ids);
-//
-//        }
-        //! [aruco_draw_pose_estimation]
-
-        //if (showRejected && !rejected.empty())
-            //cv::aruco::drawDetectedMarkers(image, rejected, noArray(), Scalar(100, 0, 255));
-
-        //imshow("out", image);
+    }
+	
         char key = (char)waitKey(1);
     }
     //! [aruco_detect_markers]
+    std::cout << "Failed to grarb image" << std::endl;
+    cam.stopVideo();
+    cv::destroyWindow("Video");
     return 0;
+    //outputVideo.release();
 }
 
 
 
 
 int main(int argc, char* argv[]) {
-
+    
     curr_state = searching;
     std::cout.precision(15);
     std::thread t1(Thread2);
+    
     //sleep_for(10s);
     //calculate Search gps coordinates
     std::vector<pair<double, double>> out = SearchAlgo(34.4193286, -119.8555100, 34.4193164, -119.8559169, 34.4193286,
@@ -332,8 +314,8 @@ int main(int argc, char* argv[]) {
     }
     std::cout << "System is ready";
 
-    Action::Result set_altitude = action.set_takeoff_altitude(8.0);
-    Action::Result set_speed = action.set_maximum_speed(1.0);
+    Action::Result set_altitude = action.set_takeoff_altitude(12.0);
+    Action::Result set_speed = action.set_maximum_speed(1.3);
 
     if (set_speed != Action::Result::Success) {
         std::cerr << "Set Speed Failed" << std::endl;
@@ -369,7 +351,7 @@ int main(int argc, char* argv[]) {
     std::pair<int, Vec3d> moveVec;
     Action::Result gps_res;
     Telemetry::Quaternion qNED;
-    std::vector<float> vecNED;
+    std::vector<double> vecNED;
     bool too_far;
     geometry::CoordinateTransformation::LocalCoordinate localCoord;
     geometry::CoordinateTransformation::GlobalCoordinate globalCoord;
@@ -404,7 +386,7 @@ int main(int argc, char* argv[]) {
                 while ((abs(telemetry.position().latitude_deg - out[searchIndex].first) > 0.00001) ||
                        (abs(telemetry.position().longitude_deg - out[searchIndex].second) > 0.00001)) {
                     m.lock();
-		    std::cout << "We have taken the mutex" << std::endl;
+		    //std::cout << "We have taken the mutex" << std::endl;
                     if (((rmarkerInfo.find(22) != rmarkerInfo.end()) && (hitMarkers.find(22) == hitMarkers.end())) || ((rmarkerInfo.find(24) != rmarkerInfo.end()) && (hitMarkers.find(24) == hitMarkers.end()))) {
                         Action::Result hold_res = action.hold();
                         if (hold_res != Action::Result::Success) {
@@ -426,10 +408,10 @@ int main(int argc, char* argv[]) {
                     //std::cout << "We should be at: " << out[searchIndex].first << ", " << out[searchIndex].second
                       //        << std::endl;
                 }
-                //if (marker_found) {
-                    //marker_found = false;
-                    //break; //break out of current state and go into either reset or moving depending on action result
-                //}
+                if (marker_found) {
+                    marker_found = false;
+                    break; //break out of current state and go into either reset or moving depending on action result
+                }
                 searchIndex++;
                 std::cout << "We have reached the target location! Checking for markers and then sleeping!"
                           << std::endl;
@@ -458,10 +440,12 @@ int main(int argc, char* argv[]) {
                     curr_state = reset;
                     break;
                 }
-                qNED = telemetry.attitude_quaternion();
-                vecNED = convertToNED(qNED, moveVec.second);
+                //qNED = telemetry.attitude_quaternion();
+                vecNED[0] = moveVec.second[0];
+		vecNED[1] = moveVec.second[1]; //convertToNED(qNED, moveVec.second);
+		vecNED[0] = vecNED[0] * -1;
                 for (int i = 0; i < vecNED.size(); i++) {
-                    if (vecNED[i] > 30)
+                    if (abs(vecNED[i]) > 30)
                         too_far = true;
                 }
                 if (too_far) {
@@ -492,7 +476,7 @@ int main(int argc, char* argv[]) {
                     break;
                 }
 
-                sleep_for(5s);
+                sleep_for(10s);
 
                 offboard_result = offboard.stop();
                 if (offboard_result != Offboard::Result::Success) {
