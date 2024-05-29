@@ -442,9 +442,10 @@ int main(int argc, char* argv[]) {
                     break;
                 }
                 //qNED = telemetry.attitude_quaternion();
-                vecNED[0] = moveVec.second[0];
-		        vecNED[1] = moveVec.second[1]; //convertToNED(qNED, moveVec.second);
-		        vecNED[0] = vecNED[0] * -1;
+                vecNED.push_back(moveVec.second[0]);
+                vecNED.push_back(moveVec.second[1]);
+		       // vecNED[1] = moveVec.second[1]; //convertToNED(qNED, moveVec.second);
+		        //vecNED[0] = vecNED[0] * -1;
                 for (int i = 0; i < vecNED.size(); i++) {
                     if (abs(vecNED[i]) > 10)
                         too_far = true;
