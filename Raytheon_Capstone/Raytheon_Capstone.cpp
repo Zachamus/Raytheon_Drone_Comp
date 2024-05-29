@@ -314,7 +314,7 @@ int main(int argc, char* argv[]) {
     }
     std::cout << "System is ready";
 
-    Action::Result set_altitude = action.set_takeoff_altitude(12.0);
+    Action::Result set_altitude = action.set_takeoff_altitude(1.0);
     Action::Result set_speed = action.set_maximum_speed(1.3);
 
     if (set_speed != Action::Result::Success) {
@@ -383,7 +383,7 @@ int main(int argc, char* argv[]) {
 
 
                 //need to take mutex right before we check the markerInfo vector
-                while ((abs(telemetry.position().latitude_deg - out[searchIndex].first) > 0.00001) ||
+                /*while ((abs(telemetry.position().latitude_deg - out[searchIndex].first) > 0.00001) ||
                        (abs(telemetry.position().longitude_deg - out[searchIndex].second) > 0.00001)) {
                     m.lock();
 		    //std::cout << "We have taken the mutex" << std::endl;
@@ -394,11 +394,11 @@ int main(int argc, char* argv[]) {
                             break;
                         }
                         moveVec  = markerScan();
-			std::cout << "We are running markerScan" << std::endl;
+			            std::cout << "We are running markerScan" << std::endl;
                         m.unlock();
                         break;
                     } else {
-			m.unlock();
+			        m.unlock();
                       }
                       
                     // now release the mutex
@@ -415,7 +415,8 @@ int main(int argc, char* argv[]) {
                 searchIndex++;
                 std::cout << "We have reached the target location! Checking for markers and then sleeping!"
                           << std::endl;
-                sleep_for(3s);
+                */
+                //sleep_for(3s);
                 m.lock();
                 if (((rmarkerInfo.find(22) != rmarkerInfo.end()) && (hitMarkers.find(22) == hitMarkers.end())) || ((rmarkerInfo.find(24) != rmarkerInfo.end()) && (hitMarkers.find(24) == hitMarkers.end()))) {
                     Action::Result hold_res = action.hold();
@@ -442,10 +443,10 @@ int main(int argc, char* argv[]) {
                 }
                 //qNED = telemetry.attitude_quaternion();
                 vecNED[0] = moveVec.second[0];
-		vecNED[1] = moveVec.second[1]; //convertToNED(qNED, moveVec.second);
-		vecNED[0] = vecNED[0] * -1;
+		        vecNED[1] = moveVec.second[1]; //convertToNED(qNED, moveVec.second);
+		        vecNED[0] = vecNED[0] * -1;
                 for (int i = 0; i < vecNED.size(); i++) {
-                    if (abs(vecNED[i]) > 30)
+                    if (abs(vecNED[i]) > 10)
                         too_far = true;
                 }
                 if (too_far) {
@@ -454,6 +455,7 @@ int main(int argc, char* argv[]) {
                     break;
                 }
                 std::cout << "Starting Offboard velocity control in NED coordinates\n";
+
 
                 // Send it once before starting offboard, otherwise it will be rejected.
 
@@ -464,10 +466,11 @@ int main(int argc, char* argv[]) {
                     curr_state = reset;
                     break;
                 }
-                movePos.north_m = vecNED[0];
-                movePos.east_m = vecNED[1];
+                movePos.north_m = vecNED[0]/ 3.281;
+                movePos.east_m = vecNED[1]/ 3.281;
                 movePos.down_m = 0;
                 movePos.yaw_deg = 0;
+                std::cout << "We are going to move " << movePos.north_m << " north, and: " << movePos.east_m << " east!" << std::endl;
                 offboard_result = offboard.set_position_ned(movePos);
 
                 if (offboard_result != Offboard::Result::Success) {
@@ -476,8 +479,8 @@ int main(int argc, char* argv[]) {
                     break;
                 }
 
-                sleep_for(10s);
-
+                sleep_for(5s);
+                std::cout << "We are stopping offboard mode! " << std::endl;
                 offboard_result = offboard.stop();
                 if (offboard_result != Offboard::Result::Success) {
                     std::cerr << "Offboard stop failed: " << offboard_result << '\n';
