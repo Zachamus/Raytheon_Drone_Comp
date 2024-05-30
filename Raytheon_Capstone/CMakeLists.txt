@@ -8,8 +8,11 @@ project(Raytheon_Capstone)
 add_executable(Raytheon_Capstone
     Raytheon_Capstone.cpp
     Header.h
+        SearchAlgo.cpp
+        SearchAlgo.h
+        OpenCV.h
 )
-set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "/home/raytheon/Downloads/GeographicLib-2.3/cmake")
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "/home/zach/Downloads/GeographicLib-2.3/cmake")
 find_package(GeographicLib REQUIRED)
 find_package(MAVSDK REQUIRED)
 find_package(OpenCV REQUIRED)
