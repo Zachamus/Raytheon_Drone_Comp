@@ -38,8 +38,6 @@ const cv::Mat cameraMatrix = (cv::Mat_<double>(3, 3) << 1420.40904, 0, 963.18981
 
 const cv::Mat distCoeffs = (cv::Mat_<double>(1, 5) << -0.0147016237, 0.419899926, 0.000778167404, -0.000997227127, -0.844393910);
 
-
-
 enum states {
     init,
     searching,
@@ -78,8 +76,6 @@ std::pair<int, Vec3d> markerScan() {
     return moveVec;
 }
 
-
-
 std::vector<float> convertToNED(Telemetry::Quaternion q, Vec3d localVec) { //convert to NED frame
 	Telemetry::Quaternion localquat;
 	localquat.w = 0;					//create dummy quaternion for local vec
@@ -100,8 +96,6 @@ std::vector<float> convertToNED(Telemetry::Quaternion q, Vec3d localVec) { //con
 
 	//now perform q * localquat * q^-1 result will also be a dummy quat, the imaginary part will be the vector we want
 }
-
-
 
 int Thread2() { //second thread running OpenCV giving results to shared resource that main thread can only view
     //CommandLineParser parser(argc, argv, keys);
@@ -162,12 +156,6 @@ int Thread2() { //second thread running OpenCV giving results to shared resource
     return 0;
     //outputVideo.release();
 }
-
-
-
-
-
-
 
 int main(int argc, char* argv[]) {
     
@@ -270,14 +258,11 @@ int main(int argc, char* argv[]) {
                     curr_state = reset;
                     break;
                 }
-                
-
 
                 //need to take mutex right before we check the markerInfo vector
                 while ((abs(telemetry.position().latitude_deg - out[searchIndex].first) > 0.00001) ||
                        (abs(telemetry.position().longitude_deg - out[searchIndex].second) > 0.00001)) {
                     m.lock();
-		    //std::cout << "We have taken the mutex" << std::endl;
                     if (((rmarkerInfo.find(22) != rmarkerInfo.end()) && (hitMarkers.find(22) == hitMarkers.end())) || ((rmarkerInfo.find(24) != rmarkerInfo.end()) && (hitMarkers.find(24) == hitMarkers.end()))) {
                         Action::Result hold_res = action.hold();
                         if (hold_res != Action::Result::Success) {
@@ -285,19 +270,13 @@ int main(int argc, char* argv[]) {
                             break;
                         }
                         moveVec  = markerScan();
-			std::cout << "We are running markerScan" << std::endl;
+			            std::cout << "We are running markerScan" << std::endl;
                         m.unlock();
                         break;
-                    } else {
-			m.unlock();
-                      }
-                      
-                    // now release the mutex
-                     //not sure if this is needed I think it isnt
-                    //std::cout << "Drone not at pos yet, we are at: " << telemetry.position().latitude_deg
-                       //       << " latitude, and: " << telemetry.position().longitude_deg << " longitude" << std::endl;
-                    //std::cout << "We should be at: " << out[searchIndex].first << ", " << out[searchIndex].second
-                      //        << std::endl;
+                    }
+                    else {
+			            m.unlock();
+                    }
                 }
                 if (marker_found) {
                     marker_found = false;
@@ -318,11 +297,8 @@ int main(int argc, char* argv[]) {
                     marker_found = false;
                 }
                 m.unlock();
-                
-                
                 sleep_for(1s);
                 break;
-
             case moving:
                 //if marker is not already hit, and marker is not ours, move to closest marker
                 std::cout << "We are in moving state: " << std::endl;
@@ -341,7 +317,7 @@ int main(int argc, char* argv[]) {
                 }
                 if (too_far) {
                     curr_state = reset;
-                    std::cout << "NED vec is too far you fucking RETARD " << std::endl;
+                    std::cout << "NED vec is out of range" << std::endl;
                     break;
                 }
                 std::cout << "Starting Offboard velocity control in NED coordinates\n";
@@ -367,7 +343,7 @@ int main(int argc, char* argv[]) {
                     break;
                 }
 
-                sleep_for(3s);
+                sleep_for(5s);
 
                 offboard_result = offboard.stop();
                 if (offboard_result != Offboard::Result::Success) {
@@ -377,9 +353,6 @@ int main(int argc, char* argv[]) {
                 }
                 curr_state = searching;
                 break;
-
-
-
             case reset:
                 const auto stop_result = action.hold();
                 const auto land_result = action.land();
@@ -399,9 +372,5 @@ int main(int argc, char* argv[]) {
                 return 0;
 
         }
-
-
     }
-
-
 }
