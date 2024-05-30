@@ -441,11 +441,11 @@ int main(int argc, char* argv[]) {
                     break;
                 }
                 //qNED = telemetry.attitude_quaternion();
-                vecNED[0] = moveVec.second[0];
-		vecNED[1] = moveVec.second[1]; //convertToNED(qNED, moveVec.second);
+                vecNED.push_back(moveVec.second[0]); // = moveVec.second[0] / 3.281;
+		vecNED.push_back(moveVec.second[1]); // = moveVec.second[1] / 3.281; //convertToNED(qNED, moveVec.second);
 		vecNED[0] = vecNED[0] * -1;
                 for (int i = 0; i < vecNED.size(); i++) {
-                    if (abs(vecNED[i]) > 30)
+                    if (abs(vecNED[i]) > 10)
                         too_far = true;
                 }
                 if (too_far) {
@@ -464,8 +464,8 @@ int main(int argc, char* argv[]) {
                     curr_state = reset;
                     break;
                 }
-                movePos.north_m = vecNED[0];
-                movePos.east_m = vecNED[1];
+                movePos.north_m = vecNED[0]/3.281;
+                movePos.east_m = vecNED[1]/3.281;
                 movePos.down_m = 0;
                 movePos.yaw_deg = 0;
                 offboard_result = offboard.set_position_ned(movePos);
@@ -476,7 +476,7 @@ int main(int argc, char* argv[]) {
                     break;
                 }
 
-                sleep_for(10s);
+                sleep_for(15s);
 
                 offboard_result = offboard.stop();
                 if (offboard_result != Offboard::Result::Success) {
