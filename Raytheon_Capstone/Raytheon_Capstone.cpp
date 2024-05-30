@@ -31,6 +31,7 @@ std::unordered_map<int, Vec3d> rmarkerInfo;
 std::unordered_set<int> hitMarkers;
 std::vector<int> markers;
 std::mutex m; //shared mutex might be best here, lots of read operations and not a bunch of write ops
+std::mutex dva; //mutex for entire opencv thread to make sure no context switching while sending offboard
 bool marker_found = false;
 const cv::Mat cameraMatrix = (cv::Mat_<double>(3, 3) << 1420.40904, 0, 963.189814,
                                                     0, 1419.58763, 541.813445,
@@ -100,6 +101,7 @@ std::vector<float> convertToNED(Telemetry::Quaternion q, Vec3d localVec) { //con
 int Thread2() { //second thread running OpenCV giving results to shared resource that main thread can only view
     //CommandLineParser parser(argc, argv, keys);
     //parser.about(about);
+
     bool showRejected = false;
     bool estimatePose = true;
     float markerLength = 1;
@@ -121,6 +123,7 @@ int Thread2() { //second thread running OpenCV giving results to shared resource
     objPoints.ptr<Vec3f>(0)[2] = Vec3f(markerLength / 2.f, -markerLength / 2.f, 0);
     objPoints.ptr<Vec3f>(0)[3] = Vec3f(-markerLength / 2.f, -markerLength / 2.f, 0);
     while (true) {
+        dva.lock();
         if(!cam.getVideoFrame(frame,1000)){
             std::cout<<"Timeout error"<<std::endl;
         }
@@ -148,6 +151,7 @@ int Thread2() { //second thread running OpenCV giving results to shared resource
         }
 
         char key = (char)waitKey(1);
+        dva.unlock();
     }
     //! [aruco_detect_markers]
     std::cout << "Failed to grarb image" << std::endl;
@@ -335,6 +339,7 @@ int main(int argc, char* argv[]) {
                 movePos.east_m = vecNED[1]/3.281;
                 movePos.down_m = 0;
                 movePos.yaw_deg = 0;
+                dva.lock();
                 offboard_result = offboard.set_position_ned(movePos);
 
                 if (offboard_result != Offboard::Result::Success) {
@@ -342,15 +347,17 @@ int main(int argc, char* argv[]) {
                     curr_state = reset;
                     break;
                 }
+                dva.unlock();
 
                 sleep_for(5s);
-
+                dva.lock();
                 offboard_result = offboard.stop();
                 if (offboard_result != Offboard::Result::Success) {
                     std::cerr << "Offboard stop failed: " << offboard_result << '\n';
                     curr_state = reset;
                     break;
                 }
+                dva.unlock();
                 curr_state = searching;
                 break;
             case reset:
