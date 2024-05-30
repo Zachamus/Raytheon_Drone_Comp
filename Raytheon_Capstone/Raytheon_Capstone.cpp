@@ -11,13 +11,11 @@
 #include <memory>
 #include <thread>
 #include <mavsdk/geometry.h>
-#include <GeographicLib/Geodesic.hpp>
 #include <unordered_set>
 #include <shared_mutex>
-#include <opencv2/aruco.hpp>
-#include <opencv2/highgui.hpp>
-#include <opencv2/opencv.hpp>
-#include <lccv.hpp>
+#include "OpenCV.h"
+#include "SearchAlgo.h"
+#include <unordered_map>
 
 
 using namespace cv;
@@ -25,22 +23,20 @@ using namespace std;
 using namespace mavsdk;
 using std::chrono::seconds;
 using std::this_thread::sleep_for;
-using namespace GeographicLib;
 const vector<pair<double, double>> searchVec1 = { {0,7.5},{10,0},{10,0},{10,0},{10,0},{10,0},{0,7.5}, {-10,0}, {-10,0}, {-10,0}, {-10,0}, {-10,0}, {0,7.5}, 
 												{10,0}, {10,0}, {10,0}, {10,0}, {10,0}, };
 int searchIndex{ 0 };
 std::vector<int> markerInfo;
 std::unordered_map<int, Vec3d> rmarkerInfo;
 std::unordered_set<int> hitMarkers;
-//std::mutex markerMutex;
 std::vector<int> markers;
 std::mutex m; //shared mutex might be best here, lots of read operations and not a bunch of write ops
 bool marker_found = false;
-cv::Mat cameraMatrix = (cv::Mat_<double>(3, 3) << 1420.40904, 0, 963.189814,
+const cv::Mat cameraMatrix = (cv::Mat_<double>(3, 3) << 1420.40904, 0, 963.189814,
                                                     0, 1419.58763, 541.813445,
                                                     0, 0, 1);
 
-cv::Mat distCoeffs = (cv::Mat_<double>(1, 5) << -0.0147016237, 0.419899926, 0.000778167404, -0.000997227127, -0.844393910);
+const cv::Mat distCoeffs = (cv::Mat_<double>(1, 5) << -0.0147016237, 0.419899926, 0.000778167404, -0.000997227127, -0.844393910);
 
 
 
@@ -107,88 +103,6 @@ std::vector<float> convertToNED(Telemetry::Quaternion q, Vec3d localVec) { //con
 
 
 
-/*mavsdk::geometry::CoordinateTransformation::LocalCoordinate cv_to_mav(std::vector<float>, double heading) {
-	// convert vector to Local Coordinate struct
-	//takes x y z vector and compass heading
-}
-*/
-//double longitude, double latitude, double altitude
-
-std::vector<std::pair<double,double>> SearchAlgo(double lat1, double long1, double lat2, double long2, double lat3, double long3, double lat4, double long4, double altitude,
-												const vector<pair<double,double>> localSearch) {
-	Geodesic geod = Geodesic::WGS84();
-	vector<pair<double, double>> gpsCoords;
-	double distance = 50;
-	double new_lat, new_long;
-	//obtain verticle angle and horizontal angle, ie need to geod.Inverse bottom left and top left, and bottom left and top right;
-	double dist_bottom, az12, az21;
-	geod.Inverse(lat1, long1, lat2, long2, dist_bottom, az12, az21); //obtain horizontal angle and distance
-	double angle_horizontal = az12;
-	double dist_top, az13, az31;
-	geod.Inverse(lat1, long1, lat3, long3, dist_top, az13, az31);//obtain vertical angle and distance
-	double currlong, currlat;
-	double angle_vertical = az13; //now from
-	geod.Direct(lat1, long1, az12, 6.858, currlat, currlong);
-
-	gpsCoords.push_back({ currlat, currlong });//append starting point, this is 7.5 yards to the right of bottom left corner.
-	double nextlong, nextlat;
-
-	for (auto gpsVec : localSearch) {
-		double up = gpsVec.first/ ((double)1.094);
-		double right = gpsVec.second / ((double)1.094);
-		if (up) {
-			geod.Direct(currlat, currlong, az13, up, nextlat, nextlong);
-		}
-		else if (right) {
-			geod.Direct(currlat, currlong, az12, right, nextlat, nextlong);
-		}
-		gpsCoords.push_back({ nextlat, nextlong });
-		currlat = nextlat;
-		currlong = nextlong;
-
-	}
-	return gpsCoords;
-
-}
-
-
-
-
-
-
-
-namespace {
-	const char* about = "Basic marker detection";
-
-	//! [aruco_detect_markers_keys]
-	const char* keys =
-		"{d        | 0     | dictionary: DICT_4X4_50=0, DICT_4X4_100=1, DICT_4X4_250=2,"
-		"DICT_4X4_1000=3, DICT_5X5_50=4, DICT_5X5_100=5, DICT_5X5_250=6, DICT_5X5_1000=7, "
-		"DICT_6X6_50=8, DICT_6X6_100=9, DICT_6X6_250=10, DICT_6X6_1000=11, DICT_7X7_50=12,"
-		"DICT_7X7_100=13, DICT_7X7_250=14, DICT_7X7_1000=15, DICT_ARUCO_ORIGINAL = 16,"
-		"DICT_APRILTAG_16h5=17, DICT_APRILTAG_25h9=18, DICT_APRILTAG_36h10=19, DICT_APRILTAG_36h11=20}"
-		"{cd       |       | Input file with custom dictionary }"
-		"{v        |       | Input from video or image file, if ommited, input comes from camera }"
-		"{ci       | 0     | Camera id if input doesnt come from video (-v) }"
-		"{c        |       | Camera intrinsic parameters. Needed for camera pose }"
-		"{l        | 0.1   | Marker side length (in meters). Needed for correct scale in camera pose }"
-		"{dp       |       | File of marker detector parameters }"
-		"{r        |       | show rejected candidates too }"
-		"{refine   |       | Corner refinement: CORNER_REFINE_NONE=0, CORNER_REFINE_SUBPIX=1,"
-		"CORNER_REFINE_CONTOUR=2, CORNER_REFINE_APRILTAG=3}";
-
-	//! [aruco_detect_markers_keys]
-
-	const string refineMethods[4] = {
-		"None",
-		"Subpixel",
-		"Contour",
-		"AprilTag"
-	};
-
-}
-
-
 int Thread2() { //second thread running OpenCV giving results to shared resource that main thread can only view
     //CommandLineParser parser(argc, argv, keys);
     //parser.about(about);
@@ -207,25 +121,12 @@ int Thread2() { //second thread running OpenCV giving results to shared resource
     cv::aruco::ArucoDetector detector(dictionary, detectorParams);
     cv::Mat frame;
 
-
-
-
-    
-    //cv::VideoWriter outputVideo;
-    //int frame_width = static_cast<int>(inputVideo.get(cv::CAP_PROP_FRAME_WIDTH));
-    //int frame_height = static_cast<int>(inputVideo.get(cv::CAP_PROP_FRAME_HEIGHT));
-    //outputVideo.open("output.avi", cv::VideoWriter::fourcc('B', 'G', 'R', '3'), 20, cv::Size(frame_width, frame_height), true);
-
     cv::Mat objPoints(4, 1, CV_32FC3);
     objPoints.ptr<Vec3f>(0)[0] = Vec3f(-markerLength / 2.f, markerLength / 2.f, 0);
     objPoints.ptr<Vec3f>(0)[1] = Vec3f(markerLength / 2.f, markerLength / 2.f, 0);
     objPoints.ptr<Vec3f>(0)[2] = Vec3f(markerLength / 2.f, -markerLength / 2.f, 0);
     objPoints.ptr<Vec3f>(0)[3] = Vec3f(-markerLength / 2.f, -markerLength / 2.f, 0);
     while (true) {
-        // Capture frame-by-frame
-        //cap >> frame;
-
-        // If the frame is empty, break immediately
         if(!cam.getVideoFrame(frame,1000)){
             std::cout<<"Timeout error"<<std::endl;
         }
@@ -233,38 +134,25 @@ int Thread2() { //second thread running OpenCV giving results to shared resource
             std::vector<int> markerIds;
             std::vector<std::vector<cv::Point2f>> markerCorners;
             detector.detectMarkers(frame, markerCorners, markerIds);
-	    
 
-    
+            size_t nMarkers = markerCorners.size();
+            vector<Vec3d> rvecs(nMarkers), tvecs(nMarkers);
 
-        //! [aruco_pose_estimation3]
-
-        // detect markers and estimate pose
-        //detector.detectMarkers(image, corners, ids, rejected);
-
-        size_t nMarkers = markerCorners.size();
-        vector<Vec3d> rvecs(nMarkers), tvecs(nMarkers);
-	 /*if (!markerIds.empty()) {
-                cv::aruco::drawDetectedMarkers(frame, markerCorners, markerIds);
-            }
-	    cv::imshow("Video", frame);*/
-	
-
-        if (estimatePose && !markerIds.empty()) {
-            // Calculate pose for each marker
-	    std::cout << "We have detected a marker" << std::endl;
-            for (size_t i = 0; i < nMarkers; i++) {
-                std::cout << markerIds.at(i) << std::endl;
-                if (markerIds.at(i) != 23) {
-                    solvePnP(objPoints, markerCorners.at(i), cameraMatrix, distCoeffs, rvecs.at(i), tvecs.at(i));
-                    m.lock(); //take mutex, need to write to hash map
-                    rmarkerInfo[markerIds.at(i)] = tvecs.at(i);
-                    m.unlock(); //release, might be a better way to write after getting all tvecs and rvecs but shouldnt matter much
+            if (estimatePose && !markerIds.empty()) {
+                // Calculate pose for each marker
+                std::cout << "We have detected a marker" << std::endl;
+                for (size_t i = 0; i < nMarkers; i++) {
+                    std::cout << markerIds.at(i) << std::endl;
+                    if (markerIds.at(i) != 23) {
+                        solvePnP(objPoints, markerCorners.at(i), cameraMatrix, distCoeffs, rvecs.at(i), tvecs.at(i));
+                        m.lock(); //take mutex, need to write to hash map
+                        rmarkerInfo[markerIds.at(i)] = tvecs.at(i);
+                        m.unlock(); //release, might be a better way to write after getting all tvecs and rvecs but shouldnt matter much
+                    }
                 }
             }
         }
-    }
-	
+
         char key = (char)waitKey(1);
     }
     //! [aruco_detect_markers]
@@ -274,6 +162,9 @@ int Thread2() { //second thread running OpenCV giving results to shared resource
     return 0;
     //outputVideo.release();
 }
+
+
+
 
 
 
@@ -442,8 +333,8 @@ int main(int argc, char* argv[]) {
                 }
                 //qNED = telemetry.attitude_quaternion();
                 vecNED.push_back(moveVec.second[0]); // = moveVec.second[0] / 3.281;
-		vecNED.push_back(moveVec.second[1]); // = moveVec.second[1] / 3.281; //convertToNED(qNED, moveVec.second);
-		vecNED[0] = vecNED[0] * -1;
+		        vecNED.push_back(moveVec.second[1]); // = moveVec.second[1] / 3.281; //convertToNED(qNED, moveVec.second);
+		        vecNED[0] = vecNED[0] * -1;
                 for (int i = 0; i < vecNED.size(); i++) {
                     if (abs(vecNED[i]) > 10)
                         too_far = true;
@@ -476,7 +367,7 @@ int main(int argc, char* argv[]) {
                     break;
                 }
 
-                sleep_for(15s);
+                sleep_for(3s);
 
                 offboard_result = offboard.stop();
                 if (offboard_result != Offboard::Result::Success) {
@@ -490,6 +381,7 @@ int main(int argc, char* argv[]) {
 
 
             case reset:
+                const auto stop_result = action.hold();
                 const auto land_result = action.land();
                 if (land_result != Action::Result::Success) {
                     std::cerr << "Landing failed: " << land_result << std::endl;
