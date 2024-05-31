@@ -258,7 +258,7 @@ int main(int argc, char* argv[]) {
                 std::cout << "Going to index " << searchIndex << std::endl;
                 gps_res = action.goto_location(out[searchIndex].first, out[searchIndex].second, global_alt, 0.0);
                 if (gps_res != Action::Result::Success) {
-                    std::cout << "Fucked" << std::endl;
+                    std::cout << "Action goto location failed" << std::endl;
                     curr_state = reset;
                     break;
                 }
@@ -312,9 +312,9 @@ int main(int argc, char* argv[]) {
                     break;
                 }
                 //qNED = telemetry.attitude_quaternion();
-                vecNED.push_back(moveVec.second[0]); // = moveVec.second[0] / 3.281;
-		        vecNED.push_back(moveVec.second[1]); // = moveVec.second[1] / 3.281; //convertToNED(qNED, moveVec.second);
-		        vecNED[0] = vecNED[0] * -1;
+                vecNED.push_back(moveVec.second[0]/3.281); // = moveVec.second[0] / 3.281;
+		        vecNED.push_back(moveVec.second[1]/3.281); // = moveVec.second[1] / 3.281; //convertToNED(qNED, moveVec.second);
+                vecNED[0] = vecNED[0] * -1; //change based on camera orientation
                 for (int i = 0; i < vecNED.size(); i++) {
                     if (abs(vecNED[i]) > 10)
                         too_far = true;
@@ -324,39 +324,21 @@ int main(int argc, char* argv[]) {
                     std::cout << "NED vec is out of range" << std::endl;
                     break;
                 }
-                std::cout << "Starting Offboard velocity control in NED coordinates\n";
-
-                // Send it once before starting offboard, otherwise it will be rejected.
-
-                offboard.set_velocity_ned(stay);
-                offboard_result = offboard.start();
-                if (offboard_result != Offboard::Result::Success) {
-                    std::cerr << "Offboard start failed: " << offboard_result << '\n';
-                    curr_state = reset;
-                    break;
+                std::cout << "Starting to move towards marker using action\n";
+                Telemetry::RawGps curr_gps = telemetry.raw_gps();
+                std::pair<double, double> marker_location = localToGlobal(curr_gps.latitude_deg, curr_gps.longitude_deg, vecNED);
+                Action::Result move_res = action.goto_location(marker_location.first, marker_location.second, curr_gps.absolute_altitude_m, 0.0f);
+                if (move_res != Action::Result::Success) {
+                    std::cerr << "Failed to move to marker!" << std::endl;
+                    return 1;
                 }
-                movePos.north_m = vecNED[0]/3.281;
-                movePos.east_m = vecNED[1]/3.281;
-                movePos.down_m = 0;
-                movePos.yaw_deg = 0;
-                dva.lock();
-                offboard_result = offboard.set_position_ned(movePos);
-                if (offboard_result != Offboard::Result::Success) {
-                    std::cout << "Offboard move failed " << std::endl;
-                    curr_state = reset;
-                    break;
-                }
-                dva.unlock();
 
-                sleep_for(5s);
-                dva.lock();
-                offboard_result = offboard.stop();
-                if (offboard_result != Offboard::Result::Success) {
-                    std::cerr << "Offboard stop failed: " << offboard_result << '\n';
-                    curr_state = reset;
-                    break;
-                }
-                dva.unlock();
+
+              
+               
+                
+                
+                
                 curr_state = searching;
                 break;
             case reset:
