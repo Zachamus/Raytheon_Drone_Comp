@@ -101,7 +101,7 @@ std::vector<float> convertToNED(Telemetry::Quaternion q, Vec3d localVec) { //con
 int Thread2() { //second thread running OpenCV giving results to shared resource that main thread can only view
     //CommandLineParser parser(argc, argv, keys);
     //parser.about(about);
-
+    cv::VideoCapture(0);
     bool showRejected = false;
     bool estimatePose = true;
     float markerLength = 1;
@@ -165,7 +165,7 @@ int main(int argc, char* argv[]) {
     
     curr_state = searching;
     std::cout.precision(15);
-    std::thread t1(Thread2);
+    //std::thread t1(Thread2);
     
     //sleep_for(10s);
     //calculate Search gps coordinates
@@ -174,7 +174,7 @@ int main(int argc, char* argv[]) {
     for (const auto &joe: out) {
         std::cout << joe.first << " " << joe.second << std::endl; //print gps coords
     }
-    
+
 
 
     Mavsdk mavsdk{Mavsdk::Configuration{Mavsdk::ComponentType::CompanionComputer}};
@@ -341,7 +341,6 @@ int main(int argc, char* argv[]) {
                 movePos.yaw_deg = 0;
                 dva.lock();
                 offboard_result = offboard.set_position_ned(movePos);
-
                 if (offboard_result != Offboard::Result::Success) {
                     std::cout << "Offboard move failed " << std::endl;
                     curr_state = reset;
