@@ -40,3 +40,25 @@ std::vector<std::pair<double,double>> SearchAlgo(double lat1, double long1, doub
     return gpsCoords;
 
 }
+
+
+std::pair<double, double> localToGlobal(double lat1, double long1, std::vector<double> vec) {
+    Geodesic geod = Geodesic::WGS84();
+    std::pair<double,double> outGPS;
+    double new_lat, new_long, final_lat, final_long;
+    for (int i = 0; i < vec.size(); i++ ) {
+        if (abs(vec[i]) > 10) {
+            outGPS.first = lat1;
+            outGPS.second = long1;
+            return outGPS;
+        }
+    }
+    geod.Direct(lat1, long1, 0, vec[0], new_lat, new_long);
+    geod.Direct(new_lat, new_long, 90, vec[1], final_lat, final_long);
+
+    outGPS.first = final_lat;
+    outGPS.second = final_long;
+
+    return outGPS;
+
+}

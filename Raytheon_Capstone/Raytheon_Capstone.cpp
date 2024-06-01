@@ -16,6 +16,7 @@
 #include "OpenCV.h"
 #include "SearchAlgo.h"
 #include <unordered_map>
+#include <lccv.hpp>
 
 
 using namespace cv;
@@ -108,7 +109,7 @@ int Thread2() { //second thread running OpenCV giving results to shared resource
     lccv::PiCamera cam;
     cam.options->video_width=1920;
     cam.options->video_height=1080;
-    cam.options->framerate=30;
+    cam.options->framerate=12;
     cam.options->verbose=true;
     cv::namedWindow("Video",cv::WINDOW_NORMAL);
     cam.startVideo();
@@ -197,7 +198,7 @@ int main(int argc, char* argv[]) {
     }
     std::cout << "System is ready";
 
-    Action::Result set_altitude = action.set_takeoff_altitude(12.0);
+    Action::Result set_altitude = action.set_takeoff_altitude(8.0);
     Action::Result set_speed = action.set_maximum_speed(1.3);
 
     if (set_speed != Action::Result::Success) {
@@ -241,12 +242,16 @@ int main(int argc, char* argv[]) {
     Offboard::Result offboard_result;
     const Offboard::VelocityNedYaw stay{};
     Offboard::PositionNedYaw movePos{};
+    Telemetry::RawGps curr_gps;
+    std::pair<double, double> marker_location;
+    Action::Result move_res;
+    bool jadonisaretard = false;
 
 
     while (1) {
         switch (curr_state) {
             case searching:
-                if (telemetry.flight_mode() == Telemetry::FlightMode::Altctl) {
+                if (telemetry.flight_mode() == Telemetry::FlightMode::Land) {
                     action.hold();
                     curr_state = reset;
                     break;
@@ -297,68 +302,63 @@ int main(int argc, char* argv[]) {
                         curr_state = reset;
                         break;
                     }
+		    
                     moveVec = markerScan();
                     marker_found = false;
                 }
                 m.unlock();
-                sleep_for(1s);
                 break;
             case moving:
-                //if marker is not already hit, and marker is not ours, move to closest marker
-                std::cout << "We are in moving state: " << std::endl;
-                if (telemetry.flight_mode() == Telemetry::FlightMode::Altctl) {
-                    action.hold();
-                    curr_state = reset;
-                    break;
-                }
-                //qNED = telemetry.attitude_quaternion();
-                vecNED.push_back(moveVec.second[0]); // = moveVec.second[0] / 3.281;
-		        vecNED.push_back(moveVec.second[1]); // = moveVec.second[1] / 3.281; //convertToNED(qNED, moveVec.second);
-		        vecNED[0] = vecNED[0] * -1;
-                for (int i = 0; i < vecNED.size(); i++) {
-                    if (abs(vecNED[i]) > 10)
-                        too_far = true;
-                }
-                if (too_far) {
-                    curr_state = reset;
-                    std::cout << "NED vec is out of range" << std::endl;
-                    break;
-                }
-                std::cout << "Starting Offboard velocity control in NED coordinates\n";
+		action.hold();
+		//if marker is not already hit, and marker is not ours, move to closest marker
+			    std::cout << "We are in moving state: " << std::endl;
+		if (telemetry.flight_mode() == Telemetry::FlightMode::Altctl) {
+		    action.hold();
+		    curr_state = reset;
+		    break;
+		}
+		//qNED = telemetry.attitude_quaternion();
+		vecNED.push_back(moveVec.second[0]/3.281); // = moveVec.second[0] / 3.281;
+		vecNED.push_back(moveVec.second[1]/3.281); // = moveVec.second[1] / 3.281; //convertToNED(qNED, moveVec.second);
+		vecNED[0] = vecNED[0] * -1; //change based on camera orientation
+		for (int i = 0; i < vecNED.size(); i++) {
+		    if (abs(vecNED[i]) > 10)
+			too_far = true;
+		}
+		if (too_far) {
+		    curr_state = reset;
+		    std::cout << "NED vec is out of range" << std::endl;
+		    break;
+		}
+		std::cout << "Starting to move towards marker using action\n";
+		curr_gps = telemetry.raw_gps();
+		std::cout << "We are moving: " << vecNED[0] << " forward and " << vecNED[1] << " right" << std::endl;
+		vecNED[1] = vecNED[1] * -1;
+		
+		marker_location = localToGlobal(curr_gps.latitude_deg, curr_gps.longitude_deg, vecNED);
+		while ((abs(telemetry.position().latitude_deg - marker_location.first) > 0.000005) ||
+                       (abs(telemetry.position().longitude_deg - marker_location.second) > 0.000005)) {
+		if (telemetry.flight_mode() == Telemetry::FlightMode::Land) {
+		    action.hold();
+		    curr_state = reset;
+		    jadonisaretard = true;
+		    break;
+		}
+		move_res = action.goto_location(marker_location.first, marker_location.second, curr_gps.absolute_altitude_m, 0.0f);
+		if (move_res != Action::Result::Success) {
+		    std::cerr << "Failed to move to marker!" << std::endl;
+		    return 1;
+		}
+		sleep_for(5s);
+	    }
+		if (jadonisaretard) {
+		    break;
+		}
 
-                // Send it once before starting offboard, otherwise it will be rejected.
+               
 
-                offboard.set_velocity_ned(stay);
-                offboard_result = offboard.start();
-                if (offboard_result != Offboard::Result::Success) {
-                    std::cerr << "Offboard start failed: " << offboard_result << '\n';
-                    curr_state = reset;
-                    break;
-                }
-                movePos.north_m = vecNED[0]/3.281;
-                movePos.east_m = vecNED[1]/3.281;
-                movePos.down_m = 0;
-                movePos.yaw_deg = 0;
-                dva.lock();
-                offboard_result = offboard.set_position_ned(movePos);
-
-                if (offboard_result != Offboard::Result::Success) {
-                    std::cout << "Offboard move failed " << std::endl;
-                    curr_state = reset;
-                    break;
-                }
-                dva.unlock();
-
-                sleep_for(5s);
-                dva.lock();
-                offboard_result = offboard.stop();
-                if (offboard_result != Offboard::Result::Success) {
-                    std::cerr << "Offboard stop failed: " << offboard_result << '\n';
-                    curr_state = reset;
-                    break;
-                }
-                dva.unlock();
-                curr_state = searching;
+                
+                //curr_state = searching;
                 break;
             case reset:
                 const auto stop_result = action.hold();
@@ -374,7 +374,7 @@ int main(int argc, char* argv[]) {
 
                 std::cout << "Landed";
 
-                sleep_for(seconds(3));
+                sleep_for(seconds(10));
 
                 return 0;
 
