@@ -110,6 +110,7 @@ int Thread2(Telemetry& telemetry) { //second thread running OpenCV giving result
     bool showRejected = false;
     bool estimatePose = true;
     float markerLength = 1;
+    bool long_sleep = false;
     lccv::PiCamera cam;
     cam.options->video_width=1920;
     cam.options->video_height=1080;
@@ -168,13 +169,22 @@ int Thread2(Telemetry& telemetry) { //second thread running OpenCV giving result
                             if ((abs(tvecs.at(i)[0]) < 0.3) && (abs(tvecs.at(i)[1]) < 0.3)) {
                                 tvec_small = true;
                                 cv_tvec_small.notify_one();
+                                long_sleep = true;
                             }
                             else {
                                 cv_sync.notify_one();
+
                             }
                         }
                         std::cout << "Sending notification" << std::endl;
-			            sleep_for(0.5s);
+			            
+                    }
+                    if (long_sleep) {
+                        sleep_for(5s);
+                        long_sleep = false;
+                    }
+                    else {
+                        sleep_for(0.5s);
                     }
                 }
             }
