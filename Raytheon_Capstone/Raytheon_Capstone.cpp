@@ -28,17 +28,22 @@ const vector<pair<double, double>> searchVec1 = { {0,7.5},{10,0},{10,0},{10,0},{
 												{10,0}, {10,0}, {10,0}, {10,0}, {10,0}, };
 int searchIndex{ 0 };
 std::vector<int> markerInfo;
-std::unordered_map<int, Vec3d> rmarkerInfo;
+std::unordered_map<int, std::pair<double,double>> rmarkerInfo;
 std::unordered_set<int> hitMarkers;
 std::vector<int> markers;
 std::mutex m; //shared mutex might be best here, lots of read operations and not a bunch of write ops
 std::mutex dva; //mutex for entire opencv thread to make sure no context switching while sending offboard
+
+
 bool marker_found = false;
 const cv::Mat cameraMatrix = (cv::Mat_<double>(3, 3) << 1420.40904, 0, 963.189814,
                                                     0, 1419.58763, 541.813445,
                                                     0, 0, 1);
 
 const cv::Mat distCoeffs = (cv::Mat_<double>(1, 5) << -0.0147016237, 0.419899926, 0.000778167404, -0.000997227127, -0.844393910);
+condition_variable cv; //sync opencv 
+condition_variable cv_tvec_small;
+bool tvec_small;
 
 enum states {
     init,
@@ -59,19 +64,17 @@ Telemetry::Quaternion mult(Telemetry::Quaternion a, Telemetry::Quaternion b) {
     return result;
 }
 
-std::pair<int, Vec3d> markerScan() {
-    double lowest = 50;
-    std::pair<int, Vec3d> moveVec;
+std::pair<int, std::pair<double,double>> markerScan() {
+    //double lowest = 50;
+    std::pair<int, std::pair<double,double>> moveVec;
 
-    for (auto [key, val]: rmarkerInfo) {
+    for (const auto& [key, val]: rmarkerInfo) {
         if (hitMarkers.find(key) == hitMarkers.end()) {
-            if (norm(val) < lowest) {
-                lowest = norm(val);
                 curr_state = moving;//marker is found and not in the hash set of markers that we've deployed water on
                 moveVec.second = val;
                 moveVec.first = key;
 
-            }
+         
         }
 
     }
@@ -99,10 +102,10 @@ std::vector<float> convertToNED(Telemetry::Quaternion q, Vec3d localVec) { //con
 	//now perform q * localquat * q^-1 result will also be a dummy quat, the imaginary part will be the vector we want
 }
 
-int Thread2() { //second thread running OpenCV giving results to shared resource that main thread can only view
+int Thread2(Telemetry& telemetry) { //second thread running OpenCV giving results to shared resource that main thread can only view
     //CommandLineParser parser(argc, argv, keys);
     //parser.about(about);
-
+    Geodesic geod = Geodesic::WGS84();
     bool showRejected = false;
     bool estimatePose = true;
     float markerLength = 1;
@@ -123,6 +126,8 @@ int Thread2() { //second thread running OpenCV giving results to shared resource
     objPoints.ptr<Vec3f>(0)[1] = Vec3f(markerLength / 2.f, markerLength / 2.f, 0);
     objPoints.ptr<Vec3f>(0)[2] = Vec3f(markerLength / 2.f, -markerLength / 2.f, 0);
     objPoints.ptr<Vec3f>(0)[3] = Vec3f(-markerLength / 2.f, -markerLength / 2.f, 0);
+    Telemetry::RawGps rawgps;
+    double lat1, long1, lat2, long2;
     while (true) {
         dva.lock();
         if(!cam.getVideoFrame(frame,1000)){
@@ -138,14 +143,26 @@ int Thread2() { //second thread running OpenCV giving results to shared resource
 
             if (estimatePose && !markerIds.empty()) {
                 // Calculate pose for each marker
+                rawgps = telemetry.raw_gps();
                 std::cout << "We have detected a marker" << std::endl;
                 for (size_t i = 0; i < nMarkers; i++) {
                     std::cout << markerIds.at(i) << std::endl;
                     if (markerIds.at(i) != 23) {
-                        solvePnP(objPoints, markerCorners.at(i), cameraMatrix, distCoeffs, rvecs.at(i), tvecs.at(i));
-                        m.lock(); //take mutex, need to write to hash map
-                        rmarkerInfo[markerIds.at(i)] = tvecs.at(i);
-                        m.unlock(); //release, might be a better way to write after getting all tvecs and rvecs but shouldnt matter much
+                        {
+                            std::lock_guard<std::mutex> lock(m); 
+                            solvePnP(objPoints, markerCorners.at(i), cameraMatrix, distCoeffs, rvecs.at(i), tvecs.at(i));
+                            geod.Direct(rawgps.latitude_deg, rawgps.longitude_deg, 0, tvecs.at(i)[0]/3.281, lat1, long1);
+                            geod.Direct(lat1, long1, 90, tvecs.at(i)[1]/3.281, lat2, long2);
+                            std::pair<double, double> ret = { lat2, long2 };
+                            rmarkerInfo[markerIds.at(i)] = ret;
+                            marker_found = true;
+                            if (tvecs.at(i)[0] < 1 && (tvecs.at(i)[1] < 1)) {
+                                tvec_small = true;
+                                cv_tvec_small.notify_one();
+                            }
+                        }
+                        cv.notify_one();
+                        std::cout << "Sending notification" << std::endl;
                     }
                 }
             }
@@ -166,7 +183,7 @@ int main(int argc, char* argv[]) {
     
     curr_state = searching;
     std::cout.precision(15);
-    std::thread t1(Thread2);
+    
     
     //sleep_for(10s);
     //calculate Search gps coordinates
@@ -190,6 +207,7 @@ int main(int argc, char* argv[]) {
     auto offboard = mavsdk::Offboard{system.value()};
     auto action = mavsdk::Action{system.value()};
     auto telemetry = mavsdk::Telemetry{system.value()};
+    std::thread t1([&telemetry]() { Thread2(telemetry); });
 
 
     while (telemetry.health_all_ok() == false) {
@@ -232,7 +250,7 @@ int main(int argc, char* argv[]) {
     Telemetry::Altitude curr_alt = telemetry.altitude();
     double global_alt = curr_alt.altitude_amsl_m;
     Telemetry::ActuatorOutputStatus joe = telemetry.actuator_output_status();
-    std::pair<int, Vec3d> moveVec;
+    std::pair<int, std::pair<double,double>> moveVec;
     Action::Result gps_res;
     Telemetry::Quaternion qNED;
     std::vector<double> vecNED;
@@ -246,6 +264,8 @@ int main(int argc, char* argv[]) {
     std::pair<double, double> marker_location;
     Action::Result move_res;
     bool jadonisaretard = false;
+    std::unique_lock<std::mutex> lock(m, std::defer_lock);
+    bool signal_det = false;
 
 
     while (1) {
@@ -260,104 +280,84 @@ int main(int argc, char* argv[]) {
                     curr_state = reset;
                     break;
                 }
+                lock.lock();
+                if (cv.wait_for(lock, std::chrono::seconds(10), [] { return marker_found; })) {
+                    // Proceed if the condition variable was notified and the condition is true
+                    std::cout << "Marker found, moving to move state" << std::endl;
+                    curr_state = moving;
+                    signal_det = true;
+                    marker_found = false;
+                }
+                else {
+                    // Timeout occurred
+                    std::cout << "Timed out, continuing search\n";
+                }
+                lock.unlock();
+                if (signal_det) {
+                    signal_det = false;
+                    break;
+                }
                 std::cout << "Going to index " << searchIndex << std::endl;
                 gps_res = action.goto_location(out[searchIndex].first, out[searchIndex].second, global_alt, 0.0);
                 if (gps_res != Action::Result::Success) {
-                    std::cout << "Fucked" << std::endl;
+                    std::cout << "Failed to move to next search index" << std::endl;
                     curr_state = reset;
                     break;
                 }
-
-                //need to take mutex right before we check the markerInfo vector
-                while ((abs(telemetry.position().latitude_deg - out[searchIndex].first) > 0.00001) ||
-                       (abs(telemetry.position().longitude_deg - out[searchIndex].second) > 0.00001)) {
-                    m.lock();
-                    if (((rmarkerInfo.find(22) != rmarkerInfo.end()) && (hitMarkers.find(22) == hitMarkers.end())) || ((rmarkerInfo.find(24) != rmarkerInfo.end()) && (hitMarkers.find(24) == hitMarkers.end()))) {
-                        Action::Result hold_res = action.hold();
-                        if (hold_res != Action::Result::Success) {
+                searchIndex++;            
+                break;
+            case moving:
+		        action.hold();
+		        //if marker is not already hit, and marker is not ours, move to closest marker
+			    std::cout << "We are in moving state: " << std::endl;
+		        if (telemetry.flight_mode() == Telemetry::FlightMode::Land) {
+		            action.hold();
+		            curr_state = reset;
+		            break;
+		        }
+                lock.lock();
+                moveVec = markerScan();
+                lock.unlock();
+                gps_res = action.goto_location(moveVec.second.first, moveVec.second.second, global_alt, 0.0);
+                if (gps_res != Action::Result::Success) {
+                    std::cout << "Failed to move to next search index" << std::endl;
+                    curr_state = reset;
+                    break;
+                }
+                while (1) {
+                    lock.lock();
+                    if (cv.wait_for(lock, std::chrono::seconds(5), [] { return marker_found; })) {
+                        // Proceed if the condition variable was notified and the condition is true
+                        std::cout << "Marker again after first move" << std::endl;
+                        moveVec = markerScan();
+                        signal_det = true;
+                        marker_found = false;
+                        gps_res = action.goto_location(moveVec.second.first, moveVec.second.second, global_alt, 0.0);
+                        if (gps_res != Action::Result::Success) {
+                            std::cout << "Failed to move to next search index" << std::endl;
                             curr_state = reset;
                             break;
                         }
-                        moveVec  = markerScan();
-			            std::cout << "We are running markerScan" << std::endl;
-                        m.unlock();
-                        break;
                     }
                     else {
-			            m.unlock();
+                        // Timeout occurred
+                        std::cout << "Timed out, continuing search\n";
                     }
-                }
-                if (marker_found) {
-                    marker_found = false;
-                    break; //break out of current state and go into either reset or moving depending on action result
-                }
-                searchIndex++;
-                std::cout << "We have reached the target location! Checking for markers and then sleeping!"
-                          << std::endl;
-                sleep_for(3s);
-                m.lock();
-                if (((rmarkerInfo.find(22) != rmarkerInfo.end()) && (hitMarkers.find(22) == hitMarkers.end())) || ((rmarkerInfo.find(24) != rmarkerInfo.end()) && (hitMarkers.find(24) == hitMarkers.end()))) {
-                    Action::Result hold_res = action.hold();
-                    if (hold_res != Action::Result::Success) {
-                        curr_state = reset;
+                    
+                    if (cv_tvec_small.wait_for(lock, std::chrono::seconds(1), [] {return tvec_small; })) {
+                        std::cout << "Detected we are close enough to marker in x and y" << std::endl;
+                        hitMarkers.insert(22);
+                        lock.unlock();
                         break;
+                        
                     }
-		    
-                    moveVec = markerScan();
-                    marker_found = false;
+                    lock.unlock();
+
+
+
+
                 }
-                m.unlock();
-                break;
-            case moving:
-		action.hold();
-		//if marker is not already hit, and marker is not ours, move to closest marker
-			    std::cout << "We are in moving state: " << std::endl;
-		if (telemetry.flight_mode() == Telemetry::FlightMode::Altctl) {
-		    action.hold();
-		    curr_state = reset;
-		    break;
-		}
-		//qNED = telemetry.attitude_quaternion();
-		vecNED.push_back(moveVec.second[0]/3.281); // = moveVec.second[0] / 3.281;
-		vecNED.push_back(moveVec.second[1]/3.281); // = moveVec.second[1] / 3.281; //convertToNED(qNED, moveVec.second);
-		vecNED[0] = vecNED[0] * -1; //change based on camera orientation
-		for (int i = 0; i < vecNED.size(); i++) {
-		    if (abs(vecNED[i]) > 10)
-			too_far = true;
-		}
-		if (too_far) {
-		    curr_state = reset;
-		    std::cout << "NED vec is out of range" << std::endl;
-		    break;
-		}
-		std::cout << "Starting to move towards marker using action\n";
-		curr_gps = telemetry.raw_gps();
-		std::cout << "We are moving: " << vecNED[0] << " forward and " << vecNED[1] << " right" << std::endl;
-		vecNED[1] = vecNED[1] * -1;
-		
-		marker_location = localToGlobal(curr_gps.latitude_deg, curr_gps.longitude_deg, vecNED);
-		while ((abs(telemetry.position().latitude_deg - marker_location.first) > 0.000005) ||
-                       (abs(telemetry.position().longitude_deg - marker_location.second) > 0.000005)) {
-		if (telemetry.flight_mode() == Telemetry::FlightMode::Land) {
-		    action.hold();
-		    curr_state = reset;
-		    jadonisaretard = true;
-		    break;
-		}
-		move_res = action.goto_location(marker_location.first, marker_location.second, curr_gps.absolute_altitude_m, 0.0f);
-		if (move_res != Action::Result::Success) {
-		    std::cerr << "Failed to move to marker!" << std::endl;
-		    return 1;
-		}
-		sleep_for(5s);
-	    }
-		if (jadonisaretard) {
-		    break;
-		}
 
-               
-
-                
                 //curr_state = searching;
                 break;
             case reset:
