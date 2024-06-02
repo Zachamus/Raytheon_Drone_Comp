@@ -148,31 +148,33 @@ int Thread2(Telemetry& telemetry) { //second thread running OpenCV giving result
             if (estimatePose && !markerIds.empty()) {
                 // Calculate pose for each marker
 		std::cout << "We have detected a marker" << std::endl;
-                rawgps = telemetry.raw_gps();
+        {
+            std::lock_guard<std::mutex> lock(m);
+            rawgps = telemetry.raw_gps();
+        }
+        
                 
                 for (size_t i = 0; i < nMarkers; i++) {
                     std::cout << markerIds.at(i) << std::endl;
+                    {
+                        std::lock_guard<std::mutex> lock(m);
                     if ((markerIds.at(i) != 23) && (hitMarkers.find(markerIds.at(i)) == hitMarkers.end())) {
-                        {
-                            std::lock_guard<std::mutex> lock(m); 
                             solvePnP(objPoints, markerCorners.at(i), cameraMatrix, distCoeffs, rvecs.at(i), tvecs.at(i));
                             geod.Direct(rawgps.latitude_deg, rawgps.longitude_deg, 0, tvecs.at(i)[0]/3.281, lat1, long1);
                             geod.Direct(lat1, long1, 90, tvecs.at(i)[1]/3.281, lat2, long2);
-			    std::vector<double> printing;
-			    //printing.push_back(tvecs.at(i)[0]);
-			    //printing.push_back(tvecs.at(i)[1]);
-			    //std::cout << "Marker detected at: " << printing[0] << "North and: " << printing[1] << " east" < std::endl;
                             std::pair<double, double> ret = { lat2, long2 };
                             rmarkerInfo[markerIds.at(i)] = ret;
                             marker_found = true;
-                            if ((abs(tvecs.at(i)[0]) < 1) && (abs(tvecs.at(i)[1]) < 1)) {
+                            if ((abs(tvecs.at(i)[0]) < 0.3) && (abs(tvecs.at(i)[1]) < 0.3)) {
                                 tvec_small = true;
                                 cv_tvec_small.notify_one();
                             }
+                            else {
+                                cv_sync.notify_one();
+                            }
                         }
-                        cv_sync.notify_one();
                         std::cout << "Sending notification" << std::endl;
-			sleep_for(0.5s);
+			            sleep_for(0.5s);
                     }
                 }
             }
@@ -219,12 +221,32 @@ int main(int argc, char* argv[]) {
     auto telemetry = mavsdk::Telemetry{system.value()};
     std::thread t1([&telemetry]() { Thread2(telemetry); });
 
+    
+
 
     while (telemetry.health_all_ok() == false) {
         std::cout << "Telemetry not healthy" << std::endl;
         std::this_thread::sleep_for(0.5s);
     }
     std::cout << "System is ready";
+
+    telemetry.subscribe_flight_mode([&action](Telemetry::FlightMode flight_mode) {
+        if (flight_mode == Telemetry::FlightMode::Land) {
+            std::cout << "Flight mode changed to LAND. Executing land command." << std::endl;
+            Action::Result land_result = action.land();
+            if (land_result != Action::Result::Success) {
+                std::cerr << "Failed to land: " << land_result << std::endl;
+            }
+            else {
+                std::cout << "Landed successfully. Sleeping for 30 seconds." << std::endl;
+                std::this_thread::sleep_for(30s); 
+                action.disarm();
+            }
+        }
+        });
+
+
+
 
     Action::Result set_altitude = action.set_takeoff_altitude(4.0);
     Action::Result set_speed = action.set_maximum_speed(1.3);
@@ -276,6 +298,8 @@ int main(int argc, char* argv[]) {
     bool jadonisaretard = false;
     std::unique_lock<std::mutex> lock(m, std::defer_lock);
     bool signal_det = false;
+    bool break_out = false;
+    
 
 
     while (1) {
@@ -335,27 +359,31 @@ int main(int argc, char* argv[]) {
                     curr_state = reset;
                     break;
                 }
-		sleep_for(0.5s);
+		           sleep_for(0.5s);
                 while (1) {
                     lock.lock();
 		    
-		    if (cv_tvec_small.wait_for(lock, std::chrono::seconds(1), [] {return tvec_small; })) {
+		            if (cv_tvec_small.wait_for(lock, std::chrono::seconds(1), [] {return tvec_small; })) {
                         std::cout << "Detected we are close enough to marker in x and y" << std::endl;
-                        hitMarkers.insert(22);
-			curr_state = searching;
-			action.hold();
-                        lock.unlock();
-			sleep_for(0.5s);
-			
-                        break;
+			            curr_state = dropping;
+			            action.hold();
+			            sleep_for(0.5s);
+                        break_out = true;
+                        
                         
                     }
+                    if (break_out) {
+                        break_out = false;
+                        lock.unlock();
+                        break;
+                    }
+
 		    
                     if (cv_sync.wait_for(lock, std::chrono::seconds(5), [] { return marker_found; })) {
                         // Proceed if the condition variable was notified and the condition is true
-                        std::cout << "Marker again after first move" << std::endl;
+                        std::cout << "Marker respotted" << std::endl;
                         moveVec = markerScan();
-                        signal_det = true;
+                        //signal_det = true;
                         marker_found = false;
                         gps_res = action.goto_location(moveVec.second.first, moveVec.second.second, global_alt, 0.0);
                         if (gps_res != Action::Result::Success) {
@@ -363,25 +391,46 @@ int main(int argc, char* argv[]) {
                             curr_state = reset;
                             break;
                         }
-			sleep_for(0.5s);
+			            sleep_for(0.5s);
                     }
                     else {
                         // Timeout occurred
                         std::cout << "Timed out, continuing search\n";
                     }
-		    
-                    
-                    
+
                     lock.unlock();
-		    
-
-
-
-
                 }
-
                 //curr_state = searching;
                 break;
+            case dropping:
+                std::cout << "Entered dropping state" << std::endl;
+                lock.lock();
+                curr_gps = telemetry.raw_gps();
+                curr_alt = telemetry.altitude();
+
+                lock.unlock();
+                gps_res = action.goto_location(curr_gps.latitude_deg, curr_gps.longitude_deg, global_alt - curr_alt.altitude_terrain_m + 2.0, 0);
+                if (gps_res != Action::Result::Success) {
+                    std::cout << "Failed to move to next search index" << std::endl;
+                    curr_state = reset;
+                    break;
+                }
+                gps_res = action.hold();
+                if (gps_res != Action::Result::Success) {
+                    std::cout << "Failed to move to next search index" << std::endl;
+                    curr_state = reset;
+                    break;
+                }
+                sleep_for(3s);
+                gps_res = action.goto_location(curr_gps.latitude_deg, curr_gps.longitude_deg, global_alt, 0.0);
+                if (gps_res != Action::Result::Success) {
+                    std::cout << "Failed to move to next search index" << std::endl;
+                    curr_state = reset;
+                    break;
+                }
+                curr_state = searching;
+                break;
+
             case reset:
                 const auto stop_result = action.hold();
                 const auto land_result = action.land();
