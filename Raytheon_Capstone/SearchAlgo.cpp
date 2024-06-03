@@ -42,7 +42,7 @@ std::vector<std::pair<double,double>> SearchAlgo(double lat1, double long1, doub
 }
 
 
-std::pair<double, double> localToGlobal(double lat1, double long1, std::vector<float> vec) {
+std::pair<double, double> localToGlobal(double lat1, double long1, std::vector<double> vec) {
     Geodesic geod = Geodesic::WGS84();
     std::pair<double,double> outGPS;
     double new_lat, new_long, final_lat, final_long;
