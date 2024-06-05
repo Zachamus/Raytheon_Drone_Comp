@@ -18,10 +18,13 @@ find_package(MAVSDK REQUIRED)
 find_package(OpenCV REQUIRED)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(LIBCAMERA REQUIRED libcamera)
+pkg_check_modules(GPIOD REQUIRED libgpiod)
+include_directories(${GPIOD_INCLUDE_DIRS})
 
 include_directories(${GeographicLib_INCLUDE_DIRS})
 target_link_libraries(Raytheon_Capstone ${GeographicLib_LIBRARIES})
 target_link_libraries( Raytheon_Capstone ${OpenCV_LIBS} )
+target_link_libraries(Raytheon_Capstone ${GPIOD_LIBRARIES})
 include_directories(${LIBCAMERA_INCLUDE_DIRS} ${OPENCV_INCLUDE_DIRS})
 target_link_libraries(Raytheon_Capstone -llccv ${OpenCV_LIBS})
 
