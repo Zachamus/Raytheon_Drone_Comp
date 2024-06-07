@@ -163,7 +163,7 @@ int Thread2(Telemetry& telemetry) { //second thread running OpenCV giving result
                     std::cout << markerIds.at(i) << std::endl;
                     
                         //std::lock_guard<std::mutex> lock(m);
-                    if ((markerIds.at(i) == 23) && (hitMarkers.find(markerIds.at(i)) == hitMarkers.end())) {
+                    if ((markerIds.at(i) != 23) && (hitMarkers.find(markerIds.at(i)) == hitMarkers.end())) {
                             solvePnP(objPoints, markerCorners.at(i), cameraMatrix, distCoeffs, rvecs.at(i), tvecs.at(i));
                             geod.Direct(rawgps.latitude_deg, rawgps.longitude_deg, 0, -1*tvecs.at(i)[1]/3.281, lat1, long1);
                             geod.Direct(lat1, long1, 90, tvecs.at(i)[0]/3.281, lat2, long2);
@@ -239,11 +239,12 @@ int main(int argc, char* argv[]) {
     }
     
     
-    return 0;
+    
+    
     //sleep_for(10s);
     //calculate Search gps coordinates
-    std::vector<pair<double, double>> out = SearchAlgo(34.4186560, -119.8570828, 34.4187115, -119.8570723, 34.4186614,
-                                                       -119.8571874, 34.419237, -119.856216, 30.0, searchVec1);
+    std::vector<pair<double, double>> out = SearchAlgo(34.4186646, -119.8574082, 34.4187258, -119.8574041, 34.4186650,
+                                                       -119.8575327, 34.419237, -119.856216, 30.0, searchVec1);
     for (const auto &joe: out) {
         std::cout << joe.first << " " << joe.second << std::endl; //print gps coords
     }
@@ -283,7 +284,7 @@ int main(int argc, char* argv[]) {
 
 
 
-    Action::Result set_altitude = action.set_takeoff_altitude(3.7);
+    Action::Result set_altitude = action.set_takeoff_altitude(4);
     Action::Result set_speed = action.set_maximum_speed(1.3);
 
     if (set_speed != Action::Result::Success) {
@@ -411,7 +412,7 @@ int main(int argc, char* argv[]) {
                     curr_state = reset;
                     break;
                 }
-		           sleep_for(0.5s);
+		           sleep_for(3s);
                 while (1) {
                     lock.lock();
 		    
@@ -458,7 +459,7 @@ int main(int argc, char* argv[]) {
                             curr_state = reset;
                             break;
                         }
-			sleep_for(1s);
+			sleep_for(2s);
 		    }
 			            
                     }
@@ -494,7 +495,7 @@ int main(int argc, char* argv[]) {
                     curr_state = reset;
                     break;
                 }
-                gps_res = action.goto_location(curr_gps.latitude_deg, curr_gps.longitude_deg, global_alt - curr_alt.altitude_terrain_m + 1.0, 0);
+                gps_res = action.goto_location(curr_gps.latitude_deg, curr_gps.longitude_deg, 6.5, 0);
                 if (gps_res != Action::Result::Success) {
                     std::cout << "Failed to move to next search index" << std::endl;
                     curr_state = reset;
@@ -517,7 +518,7 @@ int main(int argc, char* argv[]) {
                     curr_state = reset;
                     break;
                 }
-		sleep_for(10s);
+		sleep_for(1s);
                 curr_state = searching;
                 break;
 
