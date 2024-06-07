@@ -30,6 +30,8 @@ using std::chrono::seconds;
 using std::this_thread::sleep_for;
 const vector<pair<double, double>> searchVec1 = { {0,7.5} ,{10,0},{10,0},{10,0},{10,0},{0,7.5}, {-10,0}, {-10,0}, {-10,0}, {-10,0}, {-10,0}, {0,7.5}, 
 												{10,0}, {10,0}, {10,0}, {10,0}, {10,0}, };
+
+const vector<pair<double, double>> searchVec2 = { {0, 2.3}, {10,0},{10,0},{10,0},{10,0} };
 int searchIndex{ 0 };
 std::vector<int> markerInfo;
 std::unordered_map<int, std::pair<double,double>> rmarkerInfo;
@@ -314,7 +316,7 @@ int main(int argc, char* argv[]) {
         std::cerr << "Takeoff failed: " << takeoff_result << std::endl;
         return 1;
     }
-    sleep_for(10s);
+    sleep_for(5s);
     Telemetry::Altitude curr_alt = telemetry.altitude();
     double global_alt = curr_alt.altitude_amsl_m;
     //Telemetry::ActuatorOutputStatus joe = telemetry.actuator_output_status();
@@ -335,6 +337,7 @@ int main(int argc, char* argv[]) {
     std::unique_lock<std::mutex> lock(m, std::defer_lock);
     bool signal_det = false;
     bool break_out = false;
+    bool first = true;
     
 
 
@@ -386,7 +389,7 @@ int main(int argc, char* argv[]) {
                     break;
                 }
                 searchIndex++;
-		//sleep_for(20s);            
+		        //sleep_for(20s);            
                 break;
             case moving:
 		        action.hold();
@@ -424,11 +427,28 @@ int main(int argc, char* argv[]) {
                             
                         }
                         else {
-                            std::cout << "Detected we are close enough to marker in x and y" << std::endl;
-                            curr_state = dropping;
-                            action.hold();
-                            sleep_for(0.5s);
-                            break_out = true;
+                            if (first) {
+                                first = false;
+                                std::cout << "Detected we are close enough to marker in x and y first time, dropping a bit" << std::endl;
+                                curr_gps = telemetry.raw_gps();
+                                gps_res = action.goto_location(curr_gps.latitude_deg, curr_gps.longitude_deg, 7.5, 0.0);
+                                if (gps_res != Action::Result::Success) {
+                                    std::cout << "Failed to move to next search index" << std::endl;
+                                    curr_state = reset;
+                                    break;
+                                }
+                                sleep_for(3s);
+
+                            }
+                            else {
+                                std::cout << "Detected we are close enough to marker in x and y" << std::endl;
+                                curr_state = dropping;
+                                action.hold();
+                                first = true;
+                                sleep_for(0.5s);
+                                break_out = true;
+                            }
+                            
                         }
                         
                         
@@ -442,13 +462,13 @@ int main(int argc, char* argv[]) {
 		    
                     if (cv_sync.wait_for(lock, std::chrono::seconds(5), [] { return marker_found; })) {
                         // Proceed if the condition variable was notified and the condition is true
-			if (kill_switch.load()) {
+			        if (kill_switch.load()) {
                             std::cout << "Kill switch recognized, killing program" << std::endl;
                             curr_state = reset;
                             break_out = true;
                             
                         }
-			else{
+			        else{
                         std::cout << "Marker respotted" << std::endl;
                         moveVec = markerScan();
                         //signal_det = true;
@@ -459,8 +479,8 @@ int main(int argc, char* argv[]) {
                             curr_state = reset;
                             break;
                         }
-			sleep_for(2s);
-		    }
+			            sleep_for(2s);
+		                }
 			            
                     }
                     else {
@@ -476,7 +496,7 @@ int main(int argc, char* argv[]) {
                     curr_state = reset;
                     break;
                 }
-		sleep_for(0.5s);
+		        sleep_for(0.5s);
                 break;
             case dropping:
                 if (kill_switch.load()) {
@@ -484,6 +504,7 @@ int main(int argc, char* argv[]) {
                     curr_state = reset;
                     break;
                 }
+                
                 std::cout << "Entered dropping state" << std::endl;
                 lock.lock();
                 curr_gps = telemetry.raw_gps();
@@ -501,32 +522,36 @@ int main(int argc, char* argv[]) {
                     curr_state = reset;
                     break;
                 }
-		std::cout << "We are going down" << std::endl;
-		sleep_for(5s);
+		        std::cout << "We are going down" << std::endl;
+		        sleep_for(3s);
                 gps_res = action.hold();
                 if (gps_res != Action::Result::Success) {
-                    std::cout << "Failed to move to next search index" << std::endl;
+                    std::cout << "Failed to move down" << std::endl;
                     curr_state = reset;
                     break;
                 }
-		gpiod_line_set_value(line_17, 1);
+                
+		        gpiod_line_set_value(line_17, 1);
                 sleep_for(3s);
-		gpiod_line_set_value(line_17, 0);
+		        gpiod_line_set_value(line_17, 0);
                 gps_res = action.goto_location(curr_gps.latitude_deg, curr_gps.longitude_deg, global_alt, 0.0);
                 if (gps_res != Action::Result::Success) {
-                    std::cout << "Failed to move to next search index" << std::endl;
+                    std::cout << "Failed to move back up" << std::endl;
                     curr_state = reset;
                     break;
                 }
-		sleep_for(1s);
+		        sleep_for(1s);
+                lock.lock();
+                hitMarkers.insert(moveVec.first);
+                lock.unlock();
                 curr_state = searching;
                 break;
 
             case reset:
                 const auto stop_result = action.hold();
                 const auto land_result = action.land();
-		gpiod_line_release(line_17);
-		gpiod_chip_close(chip);
+		        gpiod_line_release(line_17);
+		        gpiod_chip_close(chip);
                 if (land_result != Action::Result::Success) {
                     std::cerr << "Landing failed: " << land_result << std::endl;
                     return 1;
