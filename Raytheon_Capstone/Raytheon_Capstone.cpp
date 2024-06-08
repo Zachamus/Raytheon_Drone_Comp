@@ -28,8 +28,8 @@ using namespace mavsdk;
 using namespace GeographicLib;
 using std::chrono::seconds;
 using std::this_thread::sleep_for;
-const vector<pair<double, double>> searchVec1 = { {0,7.5} ,{10,0},{10,0},{10,0},{10,0},{0,7.5}, {-10,0}, {-10,0}, {-10,0}, {-10,0}, {-10,0}, {0,7.5}, 
-												{10,0}, {10,0}, {10,0}, {10,0}, {10,0}, };
+const vector<pair<double, double>> searchVec1 = {{5.48,0},{5.48,0},{5.48,0},{5.48,0},{0,6.858}, {-5.48,0}, {-5.48,0}, {-5.48,0}, {-5.48,0}, {-5.48,0}, {0,6.858}, 
+												{5.48,0}, {5.48,0}, {5.48,0}, {5.48,0}, {5.48,0}, };
 
 const vector<pair<double, double>> searchVec2 = { {0, 2.3}, {10,0},{10,0},{10,0},{10,0} };
 int searchIndex{ 0 };
@@ -51,6 +51,7 @@ condition_variable cv_sync; //sync opencv
 condition_variable cv_tvec_small;
 bool tvec_small;
 std::atomic<bool> kill_switch{ false };
+const bool chal2 = false;
 
 enum states {
     init,
@@ -219,6 +220,7 @@ int main(int argc, char* argv[]) {
     struct gpiod_line *line_17; // *line_16;
     int offset_17 = 17; // GPIO pin number
     //int offset_16 = 16; // GPIO pin number
+    Geodesic geod = Geodesic::WGS84();
     chip = gpiod_chip_open("/dev/gpiochip4");
     if (!chip) {
 	    perror("Open chip failed");
@@ -241,16 +243,25 @@ int main(int argc, char* argv[]) {
     }
     
     
+   
+    
+    
     
     
     //sleep_for(10s);
     //calculate Search gps coordinates
-    std::vector<pair<double, double>> out = SearchAlgo(34.4186646, -119.8574082, 34.4187258, -119.8574041, 34.4186650,
-                                                       -119.8575327, 34.419237, -119.856216, 30.0, searchVec1);
+    std::vector<pair<double, double>> out = SearchAlgo(34.4044075, -119.6963124, 34.4043220, -119.69665835, 34.4041476,
+                                                       -119.6961891, 34.419237, -119.856216, 30.0, searchVec1);
     for (const auto &joe: out) {
         std::cout << joe.first << " " << joe.second << std::endl; //print gps coords
     }
-    
+    double dist_bottom, az12, az21;
+    geod.Inverse(lat1, long1, lat2, long2, dist_bottom, az12, az21); 
+    double angle_horizontal = az12;
+    double dist_top, az13, az31;
+    geod.Inverse(34.4044075, -119.6963124, 34.4041476, -119.6961891, dist_top, az13, az31);
+    double currlong, currlat;
+    double angle_vertical = az13; //use this for challenge two
 
 
     Mavsdk mavsdk{Mavsdk::Configuration{Mavsdk::ComponentType::CompanionComputer}};
@@ -286,7 +297,7 @@ int main(int argc, char* argv[]) {
 
 
 
-    Action::Result set_altitude = action.set_takeoff_altitude(4);
+    Action::Result set_altitude = action.set_takeoff_altitude(4.0);
     Action::Result set_speed = action.set_maximum_speed(1.3);
 
     if (set_speed != Action::Result::Success) {
@@ -316,9 +327,9 @@ int main(int argc, char* argv[]) {
         std::cerr << "Takeoff failed: " << takeoff_result << std::endl;
         return 1;
     }
-    sleep_for(5s);
+    sleep_for(10s);
     Telemetry::Altitude curr_alt = telemetry.altitude();
-    double global_alt = curr_alt.altitude_amsl_m;
+    double global_alt = 5.0;
     //Telemetry::ActuatorOutputStatus joe = telemetry.actuator_output_status();
     std::pair<int, std::pair<double,double>> moveVec;
     Action::Result gps_res;
@@ -338,6 +349,8 @@ int main(int argc, char* argv[]) {
     bool signal_det = false;
     bool break_out = false;
     bool first = true;
+    int missed{0};
+    double chal2lat, chal2long;
     
 
 
@@ -431,7 +444,8 @@ int main(int argc, char* argv[]) {
                                 first = false;
                                 std::cout << "Detected we are close enough to marker in x and y first time, dropping a bit" << std::endl;
                                 curr_gps = telemetry.raw_gps();
-                                gps_res = action.goto_location(curr_gps.latitude_deg, curr_gps.longitude_deg, 7.5, 0.0);
+				global_alt = 8.0;
+                                gps_res = action.goto_location(curr_gps.latitude_deg, curr_gps.longitude_deg, 2.0, 0.0);
                                 if (gps_res != Action::Result::Success) {
                                     std::cout << "Failed to move to next search index" << std::endl;
                                     curr_state = reset;
@@ -443,6 +457,7 @@ int main(int argc, char* argv[]) {
                             else {
                                 std::cout << "Detected we are close enough to marker in x and y" << std::endl;
                                 curr_state = dropping;
+				global_alt = 9.5;
                                 action.hold();
                                 first = true;
                                 sleep_for(0.5s);
@@ -469,6 +484,7 @@ int main(int argc, char* argv[]) {
                             
                         }
 			        else{
+			
                         std::cout << "Marker respotted" << std::endl;
                         moveVec = markerScan();
                         //signal_det = true;
@@ -479,13 +495,20 @@ int main(int argc, char* argv[]) {
                             curr_state = reset;
                             break;
                         }
-			            sleep_for(2s);
+			            sleep_for(3s);
 		                }
 			            
                     }
                     else {
                         // Timeout occurred
-                        std::cout << "Timed out, continuing search\n";
+                        std::cout << "Marker not respotted";
+			missed++;
+			if (missed > 2) {
+			    std::cout << "Failed to respot marker for two cycles, resuming search algo " << std::endl;
+			    curr_state = searching;
+			    missed = 0;
+			    break;
+			}
                     }
 
                     lock.unlock();
@@ -504,43 +527,56 @@ int main(int argc, char* argv[]) {
                     curr_state = reset;
                     break;
                 }
+		
                 
                 std::cout << "Entered dropping state" << std::endl;
                 lock.lock();
                 curr_gps = telemetry.raw_gps();
                 curr_alt = telemetry.altitude();
-
                 lock.unlock();
                 if (kill_switch.load()) {
                     std::cout << "Kill switch recognized, killing program" << std::endl;
                     curr_state = reset;
                     break;
                 }
-                gps_res = action.goto_location(curr_gps.latitude_deg, curr_gps.longitude_deg, 6.5, 0);
-                if (gps_res != Action::Result::Success) {
-                    std::cout << "Failed to move to next search index" << std::endl;
-                    curr_state = reset;
-                    break;
-                }
-		        std::cout << "We are going down" << std::endl;
-		        sleep_for(3s);
-                gps_res = action.hold();
+		if (chal2) {
+		    geod.Direct(curr_gps.latitude_deg, curr_gps.longitude_deg, angle_vertical , 0.5, chal2lat, chal2long);
+		    gps_res = action.goto_location(chal2lat, chal2long, 1.5, 0);
+		}
+		else {
+		    gps_res = action.goto_location(curr_gps.latitude_deg, curr_gps.longitude_deg, 1.5, 0);
+		}
+                
                 if (gps_res != Action::Result::Success) {
                     std::cout << "Failed to move down" << std::endl;
                     curr_state = reset;
                     break;
                 }
-                
-		        gpiod_line_set_value(line_17, 1);
+		std::cout << "We are going down" << std::endl;
+		sleep_for(5s);
+                gps_res = action.hold();
+                if (gps_res != Action::Result::Success) {
+                    std::cout << "Failed to hold after moving down" << std::endl;
+                    curr_state = reset;
+                    break;
+                }
+                if (chal2) {
+		    gpiod_line_set_value(line_17, 1);
+		    sleep_for(6s);
+		    gpiod_line_set_value(line_17, 0);
+		}
+		else {
+		gpiod_line_set_value(line_17, 1);
                 sleep_for(3s);
-		        gpiod_line_set_value(line_17, 0);
+		gpiod_line_set_value(line_17, 0);
+		}
                 gps_res = action.goto_location(curr_gps.latitude_deg, curr_gps.longitude_deg, global_alt, 0.0);
                 if (gps_res != Action::Result::Success) {
                     std::cout << "Failed to move back up" << std::endl;
                     curr_state = reset;
                     break;
                 }
-		        sleep_for(1s);
+		sleep_for(1s);
                 lock.lock();
                 hitMarkers.insert(moveVec.first);
                 lock.unlock();
@@ -550,8 +586,8 @@ int main(int argc, char* argv[]) {
             case reset:
                 const auto stop_result = action.hold();
                 const auto land_result = action.land();
-		        gpiod_line_release(line_17);
-		        gpiod_chip_close(chip);
+		gpiod_line_release(line_17);
+		gpiod_chip_close(chip);
                 if (land_result != Action::Result::Success) {
                     std::cerr << "Landing failed: " << land_result << std::endl;
                     return 1;
