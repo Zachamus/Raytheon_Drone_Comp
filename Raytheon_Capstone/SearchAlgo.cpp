@@ -18,7 +18,7 @@ std::vector<std::pair<double,double>> SearchAlgo(double lat1, double long1, doub
     geod.Inverse(lat1, long1, lat3, long3, dist_top, az13, az31);//obtain vertical angle and distance
     double currlong, currlat;
     double angle_vertical = az13; //now from
-    geod.Direct(lat1, long1, az12, 6.858, currlat, currlong);
+    geod.Direct(lat1, long1, az12, 1.975, currlat, currlong);
 
     gpsCoords.push_back({ currlat, currlong });//append starting point, this is 7.5 yards to the right of bottom left corner.
     double nextlong, nextlat;
@@ -62,3 +62,5 @@ std::pair<double, double> localToGlobal(double lat1, double long1, std::vector<d
     return outGPS;
 
 }
+
+

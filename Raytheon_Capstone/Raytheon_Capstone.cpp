@@ -28,10 +28,10 @@ using namespace mavsdk;
 using namespace GeographicLib;
 using std::chrono::seconds;
 using std::this_thread::sleep_for;
-const vector<pair<double, double>> searchVec1 = {{5.48,0},{5.48,0},{5.48,0},{5.48,0},{0,6.858}, {-5.48,0}, {-5.48,0}, {-5.48,0}, {-5.48,0}, {-5.48,0}, {0,6.858}, 
-												{5.48,0}, {5.48,0}, {5.48,0}, {5.48,0}, {5.48,0}, };
-
-const vector<pair<double, double>> searchVec2 = { {0, 2.3}, {10,0},{10,0},{10,0},{10,0} };
+//const vector<pair<double, double>> searchVec1 = {{5.48,0},{5.48,0},{5.48,0},{5.48,0},{0,6.858}, {-5.48,0}, {-5.48,0}, {-5.48,0}, {-5.48,0}, {-5.48,0}, {0,6.858}, 
+												//{5.48,0}, {5.48,0}, {5.48,0}, {5.48,0}, {5.48,0}, };
+//change this you bum should've listened to jadon on god
+//const vector<pair<double, double>> searchVec2 = { {0, 2.3}, {10,0},{10,0},{10,0},{10,0} };
 int searchIndex{ 0 };
 std::vector<int> markerInfo;
 std::unordered_map<int, std::pair<double,double>> rmarkerInfo;
@@ -251,12 +251,12 @@ int main(int argc, char* argv[]) {
     //sleep_for(10s);
     //calculate Search gps coordinates
     std::vector<pair<double, double>> out = SearchAlgo(34.4044075, -119.6963124, 34.4043220, -119.69665835, 34.4041476,
-                                                       -119.6961891, 34.419237, -119.856216, 30.0, searchVec1);
+                                                       -119.6961891, 34.419237, -119.856216, 30.0, searchVec3);
     for (const auto &joe: out) {
         std::cout << joe.first << " " << joe.second << std::endl; //print gps coords
     }
     double dist_bottom, az12, az21;
-    geod.Inverse(lat1, long1, lat2, long2, dist_bottom, az12, az21); 
+   // geod.Inverse(lat1, long1, lat2, long2, dist_bottom, az12, az21); 
     double angle_horizontal = az12;
     double dist_top, az13, az31;
     geod.Inverse(34.4044075, -119.6963124, 34.4041476, -119.6961891, dist_top, az13, az31);
@@ -368,7 +368,7 @@ int main(int argc, char* argv[]) {
                     //break;
                 }
                 lock.lock();
-                if (cv_sync.wait_for(lock, std::chrono::seconds(12), [] { return marker_found; })) {
+                if (cv_sync.wait_for(lock, std::chrono::seconds(6), [] { return marker_found; })) {
                     // Proceed if the condition variable was notified and the condition is true
                     if (kill_switch.load()) {
                         std::cout << "Kill switch recognized, killing program" << std::endl;
